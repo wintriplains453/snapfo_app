@@ -25,7 +25,7 @@ class _ImagePickerExampleState extends State<ImagePickerExample> {
     return Scaffold(
       backgroundColor: Colors.grey,
       appBar: AppBar(
-        title: Text('SNAPFO'),
+        title: Text('CONV'),
         backgroundColor: Colors.grey[900],
       ),
       body: Center(

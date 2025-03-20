@@ -1,3 +1,7 @@
+archive
+3.0
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/archive-4.0.4/
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/archive-4.0.4/lib/
 async
 3.4
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/async-2.12.0/
@@ -22,6 +26,10 @@ cross_file
 3.3
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/cross_file-0.3.4+2/
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/cross_file-0.3.4+2/lib/
+crypto
+3.4
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/crypto-3.0.6/
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/crypto-3.0.6/lib/
 cupertino_icons
 3.1
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/cupertino_icons-1.0.8/
@@ -66,6 +74,10 @@ http_parser
 3.4
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/http_parser-4.1.2/
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/http_parser-4.1.2/lib/
+image
+3.0
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/image-4.5.3/
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/image-4.5.3/lib/
 image_picker
 3.3
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/image_picker-1.1.2/
@@ -158,6 +170,10 @@ path_provider_windows
 3.2
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/path_provider_windows-2.3.0/
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/path_provider_windows-2.3.0/lib/
+petitparser
+3.5
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/petitparser-6.1.0/
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/petitparser-6.1.0/lib/
 platform
 3.2
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/platform-3.1.6/
@@ -166,6 +182,10 @@ plugin_platform_interface
 3.0
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/plugin_platform_interface-2.1.8/
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/plugin_platform_interface-2.1.8/lib/
+posix
+3.0
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/posix-6.0.1/
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/posix-6.0.1/lib/
 source_span
 3.1
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/source_span-1.10.1/
@@ -210,6 +230,10 @@ xdg_directories
 3.3
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/xdg_directories-1.1.0/
 file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/xdg_directories-1.1.0/lib/
+xml
+3.2
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/xml-6.5.0/
+file:///C:/Users/Alexv/AppData/Local/Pub/Cache/hosted/pub.flutter-io.cn/xml-6.5.0/lib/
 sky_engine
 3.7
 file:///E:/flutter/bin/cache/pkg/sky_engine/
