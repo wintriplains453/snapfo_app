@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
+import 'styleGan/run.dart';
 import 'dart:io';
 import 'dart:async';
+
+
 
 void main() {
   runApp(
@@ -22,6 +25,8 @@ class _ImagePickerExampleState extends State<ImagePickerExample> {
 
   @override
   Widget build(BuildContext context) {
+    final String assetsImagePath = 'assets/images/smith_aligned.jpg';
+
     return Scaffold(
       backgroundColor: Colors.grey,
       appBar: AppBar(
@@ -33,28 +38,28 @@ class _ImagePickerExampleState extends State<ImagePickerExample> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             ElevatedButton(
-              onPressed: () async {
-                final ImagePicker picker = ImagePicker();
-                final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-                if (image != null) {
-                  await saveImageToDirectory(image.path);
-                  setState(() {
-                    imagePath = image.path;
-                  });
-                }
+              onPressed: () {
+                // final ImagePicker picker = ImagePicker();
+                // final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+                // if (image != null) {
+                //   await saveImageToDirectory(image.path);
+                //   setState(() {
+                //     imagePath = assetsImagePath;
+                //   });
+                // }
+
+                main();
+
               },
-              child: const Text('Выбрать изображение'),
+              child: const Text('Применить'),
             ),
-            if (imagePath.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Image.file(
-                  File(imagePath),
-                  width: 300,
-                  height: 300,
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Image.asset(
+                  assetsImagePath,
                   fit: BoxFit.cover,
-                ),
-              ),
+              )
+            ),
           ],
         ),
       ),

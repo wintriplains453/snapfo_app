@@ -1,4 +1,4 @@
-#Thu Mar 20 21:30:57 MSK 2025
+#Fri Mar 21 12:28:51 MSK 2025
 base.0=E\:\\snapfo_app\\build\\app\\intermediates\\dex\\debug\\mergeExtDexDebug\\classes.dex
 base.1=E\:\\snapfo_app\\build\\app\\intermediates\\dex\\debug\\mergeProjectDexDebug\\0\\classes.dex
 base.2=E\:\\snapfo_app\\build\\app\\intermediates\\dex\\debug\\mergeProjectDexDebug\\1\\classes.dex
