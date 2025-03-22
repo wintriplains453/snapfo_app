@@ -1,16 +1,61 @@
-# snapfo_app
+# Изменение и вывод изображения 
 
-A new Flutter project.
+Для изменения изображения перед сохранением использовалась библиотека OpenCV
+- применения фильтра черно-белого
+- применения фильтра размытия
 
-## Getting Started
+## Краткая сводка
 
-This project is a starting point for a Flutter application.
+в файле main.dart
 
-A few resources to get you started if this is your first Flutter project:
+основная функция вывода измененного изображения - Image.memory
+функция ввода при выборе изображения - picker.pickImage
+функция ввода по умолчанию - DefaultAssetBundle.of(context).load
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## Принципы работы
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+при нажатии на кнопку "по умолчанию" происходит превращение файла в байты
+
+```typescript
+final data = await DefaultAssetBundle.of(context).load("assets/images/smith_aligned.jpg");
+final bytes = data.buffer.asUint8List();
+```
+
+в другом сценарии выбора своей картинки преобразуется в объект cv.Mat
+
+```typescript
+final mat = cv.imread(path);
+```
+
+в состояние добавляется массив изменения для отображения
+
+```typescript
+  setState(() {
+    images = [bytes, cv.imencode(".png", gray).$2, cv.imencode(".png", blur).$2];
+  });
+```
+
+или 
+
+```typescript
+  setState(() {
+    images = [
+      cv.imencode(".png", mat).$2,
+      cv.imencode(".png", gray).$2,
+      cv.imencode(".png", blur).$2,
+    ];
+  });
+```
+
+в виджет прокрутки добавляется длина массива и происходит перебор массива images из состояния выводя по индексу idx images[idx] изображения
+
+```typescript
+  Expanded(
+    child: ListView.builder(
+      itemCount: images.length,
+      itemBuilder: (ctx, idx) => Card(
+        child: Image.memory(images[idx]),
+      ),
+    ),
+  ),
+```
