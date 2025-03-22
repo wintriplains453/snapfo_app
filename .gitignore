@@ -30,3 +30,10 @@ bin/
 
 ### Mac OS ###
 .DS_Store
+
+### APK ###
+/build/*
+!/build/scripts/
+
+#cache
+.dart_tool/

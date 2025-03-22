@@ -37,6 +37,8 @@ dependencies:
   image_picker: ^1.1.2
   path_provider: ^2.0.11
   image: ^4.0.17
+  opencv_dart: ^1.4.1
+
 
 dev_dependencies:
   flutter_test:
