@@ -1,83 +1,108 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
-import 'styleGan/run.dart';
-import 'dart:io';
-import 'dart:async';
+import 'package:opencv_dart/opencv.dart' as cv;
 
-
+import 'Edit/inference_runner.dart';
+import 'Edit/edit.dart';
 
 void main() {
-  runApp(
-    MaterialApp(
-      home: ImagePickerExample(),
-    ),
-  );
+  runApp(const MyApp());
 }
 
-class ImagePickerExample extends StatefulWidget {
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
   @override
-  _ImagePickerExampleState createState() => _ImagePickerExampleState();
+  State<MyApp> createState() => _MyAppState();
 }
 
-class _ImagePickerExampleState extends State<ImagePickerExample> {
-  String imagePath = '';
+class _MyAppState extends State<MyApp> {
+  bool _isLoadingModels = true;
+  List<Uint8List> images = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _initOnnx();
+  }
+
+  Future<void> _initOnnx() async {
+    // 1) init environment
+    print("[_initOnnx] Calling initEnv()...");
+    InferenceRunner.initEnv();
+    print("[_initOnnx] initEnv() done. Now calling loadModels...");
+    // 2) load models
+    await InferenceRunner.loadModels();
+    print("[_initOnnx] loadModels() completed!");
+    setState(() => _isLoadingModels = false);
+    print("[_initOnnx] Done, set _isLoadingModels=false");
+  }
+
+  Future<void> pickAndEdit() async {
+    if (_isLoadingModels) {
+      print("Models still loading...");
+      return;
+    }
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
+
+    final path = picked.path;
+    final mat = cv.imread(path);
+    print("cv.imread => width: ${mat.cols}, height: ${mat.rows}");
+    final bytes = await picked.readAsBytes();
+
+    // Let's do "age" editing with degree=2.0
+    final edited = await ImageEditor.edit(
+      inputBytes: bytes,
+      editingName: 'age',
+      editingDegree: 2.0,
+    );
+
+    setState(() {
+      images = [bytes, edited];
+    });
+  }
+
+  @override
+  void dispose() {
+    // Clean up
+    InferenceRunner.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final String assetsImagePath = 'assets/images/smith_aligned.jpg';
+    if (_isLoadingModels) {
+      return MaterialApp(
+        home: Scaffold(
+          appBar: AppBar(title: const Text("Loading Models...")),
+          body: const Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
 
-    return Scaffold(
-      backgroundColor: Colors.grey,
-      appBar: AppBar(
-        title: Text('CONV'),
-        backgroundColor: Colors.grey[900],
-      ),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+    return MaterialApp(
+      home: Scaffold(
+        appBar: AppBar(title: const Text("ONNX Editing Example")),
+        body: Column(
           children: [
             ElevatedButton(
-              onPressed: () {
-                // final ImagePicker picker = ImagePicker();
-                // final XFile? image = await picker.pickImage(source: ImageSource.gallery);
-                // if (image != null) {
-                //   await saveImageToDirectory(image.path);
-                //   setState(() {
-                //     imagePath = assetsImagePath;
-                //   });
-                // }
-
-                main();
-
-              },
-              child: const Text('Применить'),
+              onPressed: pickAndEdit,
+              child: const Text("Pick an Image & Edit (Age)"),
             ),
-            Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Image.asset(
-                  assetsImagePath,
-                  fit: BoxFit.cover,
-              )
+            Expanded(
+              child: ListView.builder(
+                itemCount: images.length,
+                itemBuilder: (ctx, idx) => Card(
+                  child: Image.memory(images[idx]),
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
-  }
-
-  Future<void> saveImageToDirectory(String imagePath) async {
-    final directory = await getApplicationDocumentsDirectory();
-    final newDirectory = Directory('${directory.path}/styleGan/notebook');
-
-    if (!await newDirectory.exists()) {
-      await newDirectory.create(recursive: true);
-    }
-
-    final imageFile = File(imagePath);
-    final newImagePath = '${newDirectory.path}/${imageFile.uri.pathSegments.last}';
-    await imageFile.copy(newImagePath);
-
-    print('Image saved to $newImagePath');
   }
 }
