@@ -7,6 +7,7 @@ import 'Edit/inference_runner.dart';
 import 'Edit/edit.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 
@@ -68,7 +69,7 @@ class _MyAppState extends State<MyApp> {
   @override
   void dispose() {
     // Clean up
-    InferenceRunner.dispose();
+    // InferenceRunner.dispose();
     super.dispose();
   }
 
