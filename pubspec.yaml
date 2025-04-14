@@ -65,20 +65,24 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/
-    - assets/models/pre_editor.onnx
+    # - assets/models/pre_editor.onnx
     - assets/models/interfacegan_age.onnx
     - assets/models/decoder_without_new_feature.onnx
     - assets/models/decoder_with_new_feature.onnx
     - assets/models/decoder_rgb_without_new_feature.onnx
     - assets/models/decoder_rgb_with_new_feature.onnx
     - assets/models/encoder.onnx
-    - assets/models/pre_editor.onnx.data
+    # - assets/models/pre_editor.onnx.data
     - assets/models/interfacegan_age.onnx.data
     - assets/models/decoder_without_new_feature.onnx.data
     - assets/models/decoder_with_new_feature.onnx.data
     - assets/models/decoder_rgb_without_new_feature.onnx.data
     - assets/models/decoder_rgb_with_new_feature.onnx.data
     - assets/models/encoder.onnx.data
+    - assets/precomputed/image.bin
+    - assets/precomputed/w_recon.bin
+    - assets/precomputed/w_e4e.bin
+    - assets/precomputed/fused_feat.bin
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

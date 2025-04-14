@@ -21,7 +21,7 @@ class CustomTensor {
 
   Map<String, dynamic> toMap() {
     return {
-      'data': data,
+      'data': data.toList(),
       'shape': shape,
     };
   }
@@ -52,11 +52,40 @@ class CustomSession {
     return outputNames.map((name) => results[name]).toList();
   }
 }
+
+Future<CustomTensor> loadImageTensor() async {
+  final ByteData byteData = await rootBundle.load('assets/precomputed/image.bin');
+  final Float32List floatList = byteData.buffer.asFloat32List();
+  final List<int> shape = [1, 3, 1024, 1024];
+  return CustomTensor(floatList, shape);
+}
+
+Future<CustomTensor> loadWReconTensor() async {
+  final ByteData byteData = await rootBundle.load('assets/precomputed/w_recon.bin');
+  final Float32List floatList = byteData.buffer.asFloat32List();
+  final List<int> shape = [1, 18, 512];
+  return CustomTensor(floatList, shape);
+}
+
+Future<CustomTensor> loadWE4eTensor() async {
+  final ByteData byteData = await rootBundle.load('assets/precomputed/w_e4e.bin');
+  final Float32List floatList = byteData.buffer.asFloat32List();
+  final List<int> shape = [1, 18, 512];
+  return CustomTensor(floatList, shape);
+}
+
+Future<CustomTensor> loadFusedFeatTensor() async {
+  final ByteData byteData = await rootBundle.load('assets/precomputed/fused_feat.bin');
+  final Float32List floatList = byteData.buffer.asFloat32List();
+  final List<int> shape = [1, 512, 64, 64];
+  return CustomTensor(floatList, shape);
+}
+
 // ====================== Конец вспомогательных классов ======================
 
 class InferenceRunner {
   // Сессии для всех моделей
-  static CustomSession? _preEditorSession;
+  // static CustomSession? _preEditorSession;
   static CustomSession? _interfaceganAgeSession;
   static CustomSession? _decoderWithoutNewFeatureSession;
   static CustomSession? _decoderRgbWithoutNewFeatureSession;
@@ -82,7 +111,7 @@ class InferenceRunner {
     // Загружаем все модели
     await Future.wait([
       _loadModel('interfacegan_age', 'assets/models/interfacegan_age.onnx'),
-      _loadModel('pre_editor', 'assets/models/pre_editor.onnx'),
+      // _loadModel('pre_editor', 'assets/models/pre_editor.onnx'),
       _loadModel('decoder_without_new_feature', 'assets/models/decoder_without_new_feature.onnx'),
       _loadModel('decoder_rgb_without_new_feature', 'assets/models/decoder_rgb_without_new_feature.onnx'),
       _loadModel('encoder', 'assets/models/encoder.onnx'),
@@ -91,7 +120,7 @@ class InferenceRunner {
     ]);
 
     // Инициализируем сессии
-    _preEditorSession = CustomSession('pre_editor');
+    // _preEditorSession = CustomSession('pre_editor');
     _interfaceganAgeSession = CustomSession('interfacegan_age');
     _decoderWithoutNewFeatureSession = CustomSession('decoder_without_new_feature');
     _decoderRgbWithoutNewFeatureSession = CustomSession('decoder_rgb_without_new_feature');
@@ -118,30 +147,59 @@ class InferenceRunner {
   // (A) runPreEditor => returns [image, w_recon, w_e4e, fused_feat]
   // Python: run_pre_editor(x)
   // --------------------------------------------------------------------------
+  // static Future<List<Float32List>> runPreEditor(Float32List inputTensor) async {
+  //   if (_preEditorSession == null) {
+  //     throw Exception("PreEditor model not loaded. Call loadModels() first.");
+  //   }
+  //
+  //   final input = CustomTensor.createTensorWithDataList(
+  //       inputTensor,
+  //       [1, 3, 1024, 1024] // Форма входного тензора
+  //   );
+  //
+  //   final results = await _preEditorSession!.runAsync(
+  //     CustomRunOptions(),
+  //     {'input': input},
+  //     outputNames: ['image', 'w_recon', 'w_e4e', 'fused_feat'],
+  //   );
+  //
+  //   if (results.length != 4 || results.any((r) => r == null)) {
+  //     throw Exception("Invalid outputs from pre_editor");
+  //   }
+  //
+  //   // --------------------------------------------------------------------------
+  //   // (B) Example runInterfacegan => for "age" or similar
+  //   // In Python: run_onnx(interfacegan_age, (latent, degree))
+  //
+  //   return results.cast<Float32List>();
+  // }
+  // Add an async function for your pre-editor
   static Future<List<Float32List>> runPreEditor(Float32List inputTensor) async {
-    if (_preEditorSession == null) {
-      throw Exception("PreEditor model not loaded. Call loadModels() first.");
-    }
-
+    // This is just to show we "use" inputTensor; you can keep or remove as needed
     final input = CustomTensor.createTensorWithDataList(
-        inputTensor,
-        [1, 3, 1024, 1024] // Форма входного тензора
+      inputTensor,
+      [1, 3, 1024, 1024], // shape
     );
 
-    final results = await _preEditorSession!.runAsync(
-      CustomRunOptions(),
-      {'input': input},
-      outputNames: ['image', 'w_recon', 'w_e4e', 'fused_feat'],
-    );
+    // Now we can await
+    final CustomTensor imageTensor     = await loadImageTensor();
+    final CustomTensor wReconTensor   = await loadWReconTensor();
+    final CustomTensor wE4eTensor     = await loadWE4eTensor();
+    final CustomTensor fusedFeatTensor= await loadFusedFeatTensor();
 
+    final results = [
+      imageTensor.data,
+      wReconTensor.data,
+      wE4eTensor.data,
+      fusedFeatTensor.data,
+    ];
+
+    // Sanity check
     if (results.length != 4 || results.any((r) => r == null)) {
       throw Exception("Invalid outputs from pre_editor");
     }
 
-    // --------------------------------------------------------------------------
-    // (B) Example runInterfacegan => for "age" or similar
-    // In Python: run_onnx(interfacegan_age, (latent, degree))
-
+    // Return
     return results.cast<Float32List>();
   }
 

@@ -114,7 +114,7 @@ class CustomTensor {
 
   Map<String, dynamic> toMap() {
     return {
-      'data': data,
+      'data': data.toList(),
       'shape': shape,
     };
   }
@@ -138,7 +138,7 @@ class CustomSession {
       }) async {
     try {
       final inputMap = inputs.map((key, value) => MapEntry(key, {
-        'data': value.data,
+        'data': value.data.toList(), // <-- convert Float32List -> List<double>
         'shape': value.shape,
       }));
 
