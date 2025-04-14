@@ -21,7 +21,7 @@ class OnnxNativeHelper(context: Context) {
                 modelPath != null && key == "pre_editor" -> {
                     val modelFile = File(modelPath)
                     if (modelFile.length() == 0L) {
-                        throw IOException("Размер модели мал или она пустая")
+                        throw IOException("Размер модели мал или она пустая ")
                     }
                     if (!modelFile.exists()) {
                         throw IOException("Файл модели не найден: [ $modelPath ]")
