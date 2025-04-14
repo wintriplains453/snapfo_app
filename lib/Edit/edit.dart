@@ -16,7 +16,6 @@ class ImageEditor {
   }) async {
     // 1) Preprocess
     final preprocessed = ImagePreprocessor.preprocessImage(inputBytes, resizeSize: 1024);
-
     // 2) Run pre_editor
     final preEditorOutputs = await InferenceRunner.runPreEditor(preprocessed);
     if (preEditorOutputs.length < 4) {
