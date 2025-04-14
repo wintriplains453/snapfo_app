@@ -27,6 +27,7 @@ class MainActivity: FlutterActivity() {
                     try {
                         val key = call.argument<String>("key")!!
                         val modelBytes = call.argument<ByteArray>("modelBytes")!!
+                        val modelPath = call.argument<String>("modelPath")
                         onnxHelper.loadModel(key, modelBytes)
                         result.success(null)
                     } catch (e: Exception) {

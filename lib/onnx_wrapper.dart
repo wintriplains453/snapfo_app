@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 
 /// Класс для работы с ONNX моделями через нативную реализацию на Kotlin
 class OnnxWrapper {
@@ -17,10 +19,32 @@ class OnnxWrapper {
   static Future<void> loadModel({required String key, required String assetPath,}) async {
     try {
       final modelBytes = await _loadAsset(assetPath);
-      await _channel.invokeMethod('loadModel', {
-        'key': key,
-        'modelBytes': modelBytes,
-      });
+
+      if(key == 'pre_editor') {
+        final tempDir = await getTemporaryDirectory();
+        final modelFile = File('${tempDir.path}/$key.onnx');
+        await modelFile.writeAsBytes(modelBytes);
+
+        try {
+          final dataBytes = await _loadAsset('assets/models/$key.onnx.data');
+          final dataFile = File('${tempDir.path}/$key.onnx.data');
+          await dataFile.writeAsBytes(dataBytes);
+        } catch (e) {
+          print('Файл внешних данных для $key не найден');
+        }
+
+        await _channel.invokeMethod('loadModel', {
+          'key': key,
+          'modelBytes': modelBytes,
+          'modelPath': modelFile.path,
+        });
+      } else {
+          await _channel.invokeMethod('loadModel', {
+            'key': key,
+            'modelBytes': modelBytes,
+          });
+      }
+
       print('Model $key loaded successfully from $assetPath');
     } on PlatformException catch (e) {
       throw Exception("Failed to load model $key: ${e.message}");

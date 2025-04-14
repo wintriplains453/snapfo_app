@@ -78,16 +78,15 @@ class InferenceRunner {
   static Future<void> loadModels() async {
     print("[InferenceRunner.loadModels] Starting...");
 
-    await initEnv();
     // Загружаем все модели
     await Future.wait([
       _loadModel('interfacegan_age', 'assets/models/interfacegan_age.onnx'),
       _loadModel('pre_editor', 'assets/models/pre_editor.onnx'),
-      _loadModel('decoder_without_new_feature', 'assets/models/decoder_without_new_feature.onnx'),
-      _loadModel('decoder_rgb_without_new_feature', 'assets/models/decoder_rgb_without_new_feature.onnx'),
-      _loadModel('encoder', 'assets/models/encoder.onnx'),
-      _loadModel('decoder_with_new_feature', 'assets/models/decoder_with_new_feature.onnx'),
-      _loadModel('decoder_rgb_with_new_feature', 'assets/models/decoder_rgb_with_new_feature.onnx'),
+      // _loadModel('decoder_without_new_feature', 'assets/models/decoder_without_new_feature.onnx'),
+      // _loadModel('decoder_rgb_without_new_feature', 'assets/models/decoder_rgb_without_new_feature.onnx'),
+      // _loadModel('encoder', 'assets/models/encoder.onnx'),
+      // _loadModel('decoder_with_new_feature', 'assets/models/decoder_with_new_feature.onnx'),
+      // _loadModel('decoder_rgb_with_new_feature', 'assets/models/decoder_rgb_with_new_feature.onnx'),
     ]);
 
     // Инициализируем сессии
