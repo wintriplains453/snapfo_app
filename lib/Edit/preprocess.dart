@@ -1,56 +1,73 @@
+import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 
-class ImagePreprocessor {
-  static img.Image resizeImage(img.Image input, int size) {
-    final w = input.width;
-    final h = input.height;
-    if (w < h) {
-      final newW = size;
-      final newH = (h * size / w).round();
-      return img.copyResize(input, width: newW, height: newH, interpolation: img.Interpolation.linear);
+class Preprocess {
+  static Future<Float32List> preprocessImage(
+      Uint8List imagePath, {
+        int resizeSize = 1024,
+        double mean = 0.5,
+        double std = 0.5,
+      }) async {
+    // Загрузка изображения
+    img.Image? image = img.decodeImage(imagePath);
+    if (image == null) throw Exception('Не удалось декодировать изображение');
+
+    // Изменение размера
+    image = _resizeImage(image, resizeSize);
+
+    if (image.width != 1024 || image.height != 1024) {
+      throw Exception('Image must be 1024x1024 after resize');
     } else {
-      final newH = size;
-      final newW = (w * size / h).round();
-      return img.copyResize(input, width: newW, height: newH, interpolation: img.Interpolation.linear);
+      print('image 1024x1024');
     }
+
+    // Нормализация и преобразование в тензор
+    return _normalizeAndToTensor(image, mean, std);
   }
 
-  static Float32List normalizeAndToTensor({
-    required img.Image image,
-    double mean = 0.5,
-    double std = 0.5,
-  }) {
-    final w = image.width;
-    final h = image.height;
-    final c = 3; // RGB
+  static img.Image _resizeImage(img.Image image, int size) {
+    // Сначала изменяем размер с сохранением пропорций (меньшая сторона = size)
+    final resized = img.copyResize(
+      image,
+      width: size,
+      height: size,
+      interpolation: img.Interpolation.linear,
+    );
 
-    final Float32List tensor = Float32List(w * h * c);
-    int idx = 0;
-    for (int y = 0; y < h; y++) {
-      for (int x = 0; x < w; x++) {
-        final pixel = image.getPixel(x, y);
-        final r = pixel.r / 255.0;
-        final g = pixel.g / 255.0;
-        final b = pixel.b / 255.0;
+    // Затем обрезаем до квадрата
+    final minDim = min(resized.width, resized.height);
+    return img.copyCrop(
+      resized,
+      x: (resized.width - minDim) ~/ 2,
+      y: (resized.height - minDim) ~/ 2,
+      width: minDim,
+      height: minDim,
+    );
+  }
 
-        tensor[idx] = (r - mean) / std;
-        tensor[idx + w * h] = (g - mean) / std;
-        tensor[idx + 2 * w * h] = (b - mean) / std;
-        idx++;
+  static Float32List _normalizeAndToTensor(img.Image image, double mean, double std) {
+    final width = image.width;
+    final height = image.height;
+    final channels = 3; // RGB
+
+    // Создаем тензор [1, C, H, W]
+    final tensor = Float32List(channels * height * width);
+    final pixels = image.getBytes(); // Получаем байты изображения в RGB формате
+
+    // Нормализация и транспонирование (HWC -> CHW)
+    for (var c = 0; c < channels; c++) {
+      for (var h = 0; h < height; h++) {
+        for (var w = 0; w < width; w++) {
+          final pixelIndex = (h * width + w) * channels + c;
+          final value = pixels[pixelIndex] / 255.0;
+          final normalized = (value - mean) / std;
+          tensor[c * height * width + h * width + w] = normalized.toDouble();
+        }
       }
     }
-    return tensor;
-  }
 
-  /// Overall: decode, resize(1024), normalize => [1,3,H,W]
-  static Float32List preprocessImage(Uint8List bytes,
-      {int resizeSize = 1024, double mean = 0.5, double std = 0.5}) {
-    final decoded = img.decodeImage(bytes);
-    if (decoded == null) {
-      throw Exception("Failed to decode image bytes");
-    }
-    final resized = resizeImage(decoded, resizeSize);
-    return normalizeAndToTensor(image: resized, mean: mean, std: std);
+    return tensor;
   }
 }

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
+import '../onnx_wrapper.dart';
 
 import 'Edit/inference_runner.dart';
 import 'Edit/edit.dart';
@@ -29,12 +30,9 @@ class _MyAppState extends State<MyApp> {
   }
 
   Future<void> _initOnnx() async {
-    // 1) init environment
-    print("[_initOnnx] Calling initEnv()...");
     InferenceRunner.initEnv();
-    print("[_initOnnx] initEnv() done. Now calling loadModels...");
-    // 2) load models
-    await InferenceRunner.loadModels();
+    print("[initEnv] initEnv() completed!");
+    InferenceRunner.loadModels();
     print("[_initOnnx] loadModels() completed!");
     setState(() => _isLoadingModels = false);
     print("[_initOnnx] Done, set _isLoadingModels=false");
@@ -54,15 +52,18 @@ class _MyAppState extends State<MyApp> {
     print("cv.imread => width: ${mat.cols}, height: ${mat.rows}");
     final bytes = await picked.readAsBytes();
 
-    // Let's do "age" editing with degree=2.0
+    // Передаём context из State в ImageEditor.edit
     final edited = await ImageEditor.edit(
       inputBytes: bytes,
-      editingName: 'age',
-      editingDegree: 2.0,
+      editingName: 'styleclip_global_face with hair_face with blonde hair_0.2',
+      editingDegree: 16.0,
+      align: false,
+      combinedPreEditor: false,
+      context: context,
     );
 
     setState(() {
-      images = [bytes, edited];
+      images = [bytes, edited as Uint8List];
     });
   }
 
