@@ -18,32 +18,24 @@ class OnnxNativeHelper(context: Context) {
     fun loadModel(key: String, modelBytes: ByteArray, modelPath: String? = null) {
         try {
             val sessionOptions = OrtSession.SessionOptions()
-            when {
-                modelPath != null && key == "pre_editor" -> {
-                    val modelFile = File(modelPath)
-                    if (modelFile.length() == 0L) {
-                        throw IOException("Размер модели мал или она пустая ")
-                    }
-                    if (!modelFile.exists()) {
-                        throw IOException("Файл модели не найден: [ $modelPath ]")
-                    }
-
-                    val dataFile = File("$modelPath.data")
-                    if (!dataFile.exists()) {
-                        println("Не найден data для onnx файла $key")
-                    }
-
-                    sessions[key] = env.createSession(modelPath, sessionOptions)
-                    println("Модель $key успешно загружена из: $modelPath")
-                }
-                else -> {
-                    sessions[key] = env.createSession(modelBytes, sessionOptions)
-                    println("Модель $key успешно загрузилась из памяти")
-                }
-            }
+            sessions[key] = env.createSession(modelBytes, sessionOptions)
+            println("Модель $key успешно загрузилась из памяти")
         } catch (e: Exception) {
             throw RuntimeException("Ошибка загрузки $key: ${e.message}", e)
         }
+    }
+
+
+    fun disposeModel(key: String) {
+        sessions[key]?.close()
+        sessions.remove(key)
+        println("Model $key successfully disposed")
+    }
+
+    fun disposeAll() {
+        sessions.values.forEach { it.close() }
+        sessions.clear()
+        println("All sessions disposed")
     }
 
     private fun createTensor(data: Any, shape: LongArray? = null): OnnxTensor {

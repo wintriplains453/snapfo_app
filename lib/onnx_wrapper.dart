@@ -1,7 +1,5 @@
 import 'dart:typed_data';
 import 'package:flutter/services.dart' show MethodChannel, PlatformException, rootBundle;
-import 'package:path_provider/path_provider.dart';
-import 'dart:io';
 
 class OnnxWrapper {
   static const _channel = MethodChannel('com.example.snapfo_app/onnx');
@@ -14,38 +12,42 @@ class OnnxWrapper {
     }
   }
 
-  static Future<void> loadModel({required String key, required String assetPath}) async {
+  static Future<void> loadModel({required String key, String? assetPath, Uint8List? modelData}) async {
     try {
-      final modelBytes = await _loadAsset(assetPath);
-
-      if (key == 'pre_editor') {
-        final tempDir = await getTemporaryDirectory();
-        final modelFile = File('${tempDir.path}/$key.onnx');
-        await modelFile.writeAsBytes(modelBytes);
-
-        try {
-          final dataBytes = await _loadAsset('assets/models/$key.onnx.data');
-          final dataFile = File('${tempDir.path}/$key.onnx.data');
-          await dataFile.writeAsBytes(dataBytes);
-        } catch (e) {
-          print('Файл внешних данных для $key не найден');
+      if (modelData != null) {
+        if (modelData.isEmpty) {
+          throw Exception('Model data for $key is empty');
         }
-
         await _channel.invokeMethod('loadModel', {
           'key': key,
-          'modelBytes': modelBytes,
-          'modelPath': modelFile.path,
+          'modelData': modelData,
+        });
+      } else if (assetPath != null) {
+        final modelData = await _loadAsset(assetPath);
+        if (modelData.isEmpty) {
+          throw Exception('Loaded model data for $key from $assetPath is empty');
+        }
+        await _channel.invokeMethod('loadModel', {
+          'key': key,
+          'modelData': modelData,
         });
       } else {
-        await _channel.invokeMethod('loadModel', {
-          'key': key,
-          'modelBytes': modelBytes,
-        });
+        throw Exception('Either assetPath or modelData must be provided for $key');
       }
+      print('Model $key loaded successfully');
+    } catch (e) {
+      print('Error loading model $key: $e');
+      rethrow;
+    }
+  }
 
-      print('Model $key loaded successfully from $assetPath');
-    } on PlatformException catch (e) {
-      throw Exception('Failed to load model $key: ${e.message}');
+  static Future<void> disposeModel(String key) async {
+    try {
+      await _channel.invokeMethod('disposeModel', {'key': key});
+      print('Model $key disposed successfully');
+    } catch (e) {
+      print('Error disposing model $key: $e');
+      rethrow;
     }
   }
 
@@ -115,6 +117,7 @@ class CustomRunOptions {
 
 class CustomSession {
   final String sessionKey;
+  bool _isDisposed = false;
 
   CustomSession(this.sessionKey);
 
@@ -123,6 +126,9 @@ class CustomSession {
       Map<String, CustomTensor> inputs, {
         List<String> outputNames = const ['output'],
       }) async {
+    if (_isDisposed) {
+      throw Exception('Session $sessionKey is already disposed');
+    }
     try {
       final inputMap = inputs.map((key, value) => MapEntry(key, {
         'data': value.data,
@@ -139,6 +145,14 @@ class CustomSession {
       return outputNames.map((name) => results[name]).toList();
     } catch (e) {
       throw Exception('Session run failed: ${e.toString()}');
+    }
+  }
+
+  void dispose() {
+    if (!_isDisposed) {
+      OnnxWrapper.disposeModel(sessionKey);
+      _isDisposed = true;
+      print('Session $sessionKey disposed');
     }
   }
 }

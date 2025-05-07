@@ -1,9 +1,10 @@
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
+import 'package:flutter/services.dart';
+
 import 'package:logger/logger.dart';
 import '../onnx_wrapper.dart';
-import 'simple_tokenizer.dart';
 import 'dart:convert';
 
 // Настройка логирования
@@ -61,16 +62,39 @@ class StyleClipEditor {
     'a photo of a small {}.',
   ];
 
-  static const styleSpaceDimensions = [
-    512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, // 15 x 512
-    256, 256, 256, // 3 x 256
-    128, 128, 128, // 3 x 128
-    64, 64, 64, // 3 x 64
-    32, 32, // 2 x 32
+  static const clipTextDimensions = [
+    512, 512, 512, 512, 512, 512, 512, 512, 512, 512, // style_out_0–9
+    256, 256, // style_out_10–11
+    128, 128, // style_out_12–13
+    64, 64, // style_out_14–15
+    32, // style_out_16
+    512, // rgb_out_0
+    512, 512, 512, // rgb_out_1–3
+    512, // rgb_out_4
+    256, // rgb_out_5
+    128, // rgb_out_6
+    64, // rgb_out_7
+    32, // rgb_out_8
   ];
 
-  static const toRgbIndices = [1, 4, 7, 10, 13, 16, 19, 22, 25]; // Индексы toRGB слоев
-  static const styleSpaceIndicesWithoutToRgb = [0, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15];
+  static const toRgbIndices = [17, 18, 19, 20, 21, 22, 23, 24, 25];
+  static const styleSpaceIndicesWithoutToRgb = [
+    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, // style_out_0–9 (512)
+    10, 11, 12, 13, 14, 15, 16 // style_out_10–16 (256, 256, 128, 128, 64, 64, 32)
+  ];
+
+  // Новая функция для загрузки токенов из JSON
+  static Future<List<List<int>>> loadTokensFromJson() async {
+    try {
+      final jsonString = await rootBundle.loadString('assets/tokens/blonde.json');
+      final List<dynamic> jsonData = json.decode(jsonString);
+      // Преобразуем в List<List<int>>
+      final tokens = jsonData.map((dynamic row) => (row as List<dynamic>).cast<int>()).toList();
+      return tokens;
+    } catch (e) {
+      throw Exception('Failed to load tokens from JSON: $e');
+    }
+  }
 
   static Future<(List<Float32List>, List<Float32List>)> getStyleclipGlobalEdits(
       List<Float32List> startS,
@@ -78,47 +102,23 @@ class StyleClipEditor {
       String editingName,
       context,
       ) async {
-    logger.i('Starting getStyleclipGlobalEdits: editingName=$editingName, factor=$factor');
 
     // Парсинг имени редактирования
     final direction = editingName.replaceFirst('styleclip_global_', '');
     final parts = direction.split('_');
-    if (parts.length != 3) {
-      logger.e('Invalid editing name format: $editingName');
-      throw Exception('Invalid editing name format: $editingName');
-    }
+
     final neutralText = parts[0];
     final targetText = parts[1];
     final disentangleStr = parts[2];
     final disentanglement = double.parse(disentangleStr);
-    logger.i('Parsed: neutralText=$neutralText, targetText=$targetText, disentanglement=$disentanglement');
 
     // Формирование текстовых промптов
     final allSentences = [
       ...templates.map((t) => t.replaceFirst('{}', targetText)),
       ...templates.map((t) => t.replaceFirst('{}', neutralText)),
     ];
-    logger.i('Generated ${allSentences.length} sentences');
+    final tokens = await loadTokensFromJson();
 
-    // Токенизация
-    final tokenizer = await SimpleTokenizer.create(context: context);
-    final tokens = await tokenize(
-      allSentences,
-      tokenizer: tokenizer,
-      contextLength: 77,
-      truncate: true,
-      context: context,
-    );
-    print(tokenizer.bpe("dog"));
-    print(tokenizer.encoder.length);
-    print(tokenizer.encoder.entries.take(5));
-    print(tokenizer.decode([49406, 320, 2103, 335, 606, 531, 539, 320, 1710, 593]));
-    print('Tokens shape: ${tokens.length}x${tokens[0].length}');
-    print('Sample tokens: ${tokens[0].sublist(0, 10)}');
-    logger.i('Tokenized: ${tokens.length} token lists, sample_tokens=${tokens[0].sublist(0, 10)}');
-
-    // Запуск clip_text_encoder_compressed.onnx
-    logger.i('Running ONNX model');
     final session = CustomSession('clip_text_encoder_compressed');
     final disentangleTensor = CustomTensor(Float32List.fromList([disentanglement]), [1]);
     final flatTokens = tokens.expand((tokenList) => tokenList).toList();
@@ -136,56 +136,83 @@ class StyleClipEditor {
       },
       outputNames: List.generate(26, (i) => 'o${i + 1}'),
     );
-    logger.i('ONNX model output: ${outputs.length} directions');
-    for (var i = 0; i < outputs.length; i++) {
-      final output = outputs[i]!;
-      final mean = output.fold(0.0, (sum, x) => sum + x) / output.length;
-      final variance = output.fold(0.0, (sum, x) => sum + (x - mean) * (x - mean)) / output.length;
-      final std = sqrt(variance); // Use sqrt from dart:math
-      logger.d('Direction $i: length=${output.length}, mean=$mean, std=$std');
-      if (output.any((x) => x.isNaN || x.isInfinite)) {
-        logger.w('Direction $i contains NaN or Infinite values');
-      }
+
+    // for (var i = 0; i < outputs.length; i++) {
+    //   final output = outputs[i]!;
+    //   print('Output o${i + 1} length: ${output.length}');
+    // }
+
+    // for (var i = 0; i < outputs.length; i++) {
+    //   print('Output o${i + 1} length: ${outputs[i]!.length}, expected: ${styleSpaceDimensions[i]}');
+    // }
+    //
+    for (var i = 0; i < startS.length; i++) {
+      print('startS[$i] length: ${startS[i].length}, expected: ${clipTextDimensions[i]}');
     }
 
-    // Разделение на StyleSpace и toRGB направления
-    final editsSs = styleSpaceIndicesWithoutToRgb.map((i) => outputs[i]!).toList();
-    final editsRgb = toRgbIndices.map((i) => outputs[i]!).toList();
-    logger.i('StyleSpace directions: ${editsSs.length}, toRGB directions: ${editsRgb.length}');
+    final editsSs = <Float32List>[];
+    for (var i = 0; i < styleSpaceIndicesWithoutToRgb.length; i++) {
+      final ssIndex = styleSpaceIndicesWithoutToRgb[i];
+      final output = outputs[i]!; // Берем тензоры последовательно
+      final expectedLength = clipTextDimensions[ssIndex];
+      if (output.length != expectedLength) {
+        print('Warning: Output o${i + 1} has length ${output.length}, expected $expectedLength. Adjusting.');
+        final adjustedOutput = Float32List(expectedLength);
+        for (var j = 0; j < min(output.length, expectedLength); j++) {
+          adjustedOutput[j] = output[j];
+        }
+        editsSs.add(adjustedOutput);
+      } else {
+        editsSs.add(Float32List.fromList(output));
+      }
+      print('editsSs[$i] length: ${editsSs[i].length}, startS[$ssIndex] length: ${startS[ssIndex].length}');
+    }
+
+    final editsRgb = <Float32List>[];
+    for (var i = 0; i < toRgbIndices.length; i++) {
+      final rgbIndex = toRgbIndices[i];
+      final output = outputs[styleSpaceIndicesWithoutToRgb.length + i]!;
+      final expectedLength = clipTextDimensions[rgbIndex];
+      if (output.length != expectedLength) {
+        print('Warning: Output o${styleSpaceIndicesWithoutToRgb.length + i + 1} has length ${output.length}, expected $expectedLength. Adjusting.');
+        final adjustedOutput = Float32List(expectedLength);
+        for (var j = 0; j < min(output.length, expectedLength); j++) {
+          adjustedOutput[j] = output[j];
+        }
+        editsRgb.add(adjustedOutput);
+      } else {
+        editsRgb.add(Float32List.fromList(output));
+      }
+      print('editsRgb[$i] length: ${editsRgb[i].length}, startS[$rgbIndex] length: ${startS[rgbIndex].length}');
+    }
 
     // Применение фактора к StyleSpace направлениям
     final editedSsList = <Float32List>[];
     for (var i = 0; i < editsSs.length; i++) {
-      final orig = startS[i];
+      final ssIndex = styleSpaceIndicesWithoutToRgb[i];
+      final orig = startS[ssIndex];
       final delta = editsSs[i];
       final out = Float32List(orig.length);
       for (var j = 0; j < orig.length; j++) {
-        out[j] = orig[j] + (factor / 1.5) * delta[j % delta.length];
+        out[j] = orig[j] + (factor / 1.5) * delta[j];
       }
-      final mean = out.fold(0.0, (sum, x) => sum + x) / out.length;
-      final variance = out.fold(0.0, (sum, x) => sum + (x - mean) * (x - mean)) / out.length;
-      final std = sqrt(variance); // Use sqrt from dart:math
-      logger.d('Edited StyleSpace $i: length=${out.length}, mean=$mean, std=$std');
       editedSsList.add(out);
     }
 
     // Применение фактора 1.0 к toRGB слоям
     final editedRgbList = <Float32List>[];
     for (var i = 0; i < editsRgb.length; i++) {
-      final orig = startS[editsSs.length + i];
+      final rgbIndex = toRgbIndices[i];
+      final orig = startS[rgbIndex];
       final delta = editsRgb[i];
       final out = Float32List(orig.length);
       for (var j = 0; j < orig.length; j++) {
-        out[j] = orig[j] + (1.0 / 1.5) * delta[j % delta.length];
+        out[j] = orig[j] + (1.0 / 1.5) * delta[j];
       }
-      final mean = out.fold(0.0, (sum, x) => sum + x) / out.length;
-      final variance = out.fold(0.0, (sum, x) => sum + (x - mean) * (x - mean)) / out.length;
-      final std = sqrt(variance); // Use sqrt from dart:math
-      logger.d('Edited toRGB $i: length=${out.length}, mean=$mean, std=$std');
       editedRgbList.add(out);
     }
 
-    logger.i('Completed getStyleclipGlobalEdits');
+    print('style_clip success!!!');
     return (editedSsList, editedRgbList);
   }
 }

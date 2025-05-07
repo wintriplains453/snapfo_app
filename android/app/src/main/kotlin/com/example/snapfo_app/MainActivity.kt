@@ -25,12 +25,24 @@ class MainActivity: FlutterActivity() {
                 "loadModel" -> {
                     try {
                         val key = call.argument<String>("key")!!
-                        val modelBytes = call.argument<ByteArray>("modelBytes")!!
-                        val modelPath = call.argument<String>("modelPath")
-                        onnxHelper.loadModel(key, modelBytes, modelPath)
+                        val modelBytes = call.argument<ByteArray>("modelData")!! // Используем modelData
+                        if (modelBytes.isEmpty()) {
+                            result.error("LOAD_ERROR", "Model data for $key is empty", null)
+                            return@setMethodCallHandler
+                        }
+                        onnxHelper.loadModel(key, modelBytes)
                         result.success(null)
                     } catch (e: Exception) {
                         result.error("LOAD_ERROR", e.message, null)
+                    }
+                }
+                "disposeModel" -> {
+                    try {
+                        val key = call.argument<String>("key")!!
+                        onnxHelper.disposeModel(key)
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error("DISPOSE_ERROR", e.message, null)
                     }
                 }
                 "runInference" -> {

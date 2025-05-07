@@ -70,12 +70,12 @@ flutter:
     - assets/bpe_simple_vocab_16e6.txt.gz
     - assets/models/interpolate.onnx
     - assets/models/invert_compressed.onnx
-    - assets/models/fuser.onnx
+    - assets/models/fuser_compressed.onnx
     - assets/models/e4e_encoder_compressed.onnx
     - assets/models/decoder_without_new_feature.onnx
     - assets/models/decoder_rgb_without_new_feature.onnx
-    - assets/models/encoder.onnx
-    - assets/models/decoder_with_new_feature.onnx
+    - assets/models/encoder_compressed.onnx
+    - assets/models/decoder_with_new_feature_compressed.onnx
     - assets/models/decoder_rgb_with_new_feature.onnx
     - assets/models/interfacegan_age.onnx
     - assets/models/decoder_stylespace.onnx
