@@ -16,6 +16,26 @@ final logger = Logger(
   ]),
 );
 
+void _logTensorStats(String stage, List<Float32List> tensors, List<String> names) {
+  for (int i = 0; i < tensors.length; i++) {
+  final tensor = tensors[i];
+  final name = names[i];
+  bool hasNaN = false;
+  bool hasInfinity = false;
+  double minVal = double.infinity;
+  double maxVal = -double.infinity;
+  for (var val in tensor) {
+    if (val.isNaN) hasNaN = true;
+    if (val.isInfinite) hasInfinity = true;
+    if (!val.isNaN && !val.isInfinite) {
+      minVal = minVal < val ? minVal : val;
+      maxVal = maxVal > val ? maxVal : val;
+    }
+  }
+  print('$stage [$name] stats: hasNaN=$hasNaN, hasInfinity=$hasInfinity, min=$minVal, max=$maxVal, length=${tensor.length}');
+  }
+}
+
 class StyleClipEditor {
   static const templates = [
     'a bad photo of a {}.',
@@ -62,7 +82,7 @@ class StyleClipEditor {
     'a photo of a small {}.',
   ];
 
-  static const clipTextDimensions = [
+  static const styleSpaceDimensions = [
     512, 512, 512, 512, 512, 512, 512, 512, 512, 512, // style_out_0–9
     256, 256, // style_out_10–11
     128, 128, // style_out_12–13
@@ -118,6 +138,11 @@ class StyleClipEditor {
       ...templates.map((t) => t.replaceFirst('{}', neutralText)),
     ];
     final tokens = await loadTokensFromJson();
+    print('Loaded tokens: ${tokens.length} sentences, each with ${tokens[0].length} tokens');
+
+    if (tokens.length != 84 || tokens.any((t) => t.length != 77)) {
+      throw Exception('Invalid tokens: expected 84 sentences with 77 tokens each');
+    }
 
     final session = CustomSession('clip_text_encoder_compressed');
     final disentangleTensor = CustomTensor(Float32List.fromList([disentanglement]), [1]);
@@ -137,53 +162,39 @@ class StyleClipEditor {
       outputNames: List.generate(26, (i) => 'o${i + 1}'),
     );
 
-    // for (var i = 0; i < outputs.length; i++) {
-    //   final output = outputs[i]!;
-    //   print('Output o${i + 1} length: ${output.length}');
-    // }
+    for (var i = 0; i < outputs.length; i++) {
+      print('Output o${i + 1} length: ${outputs[i]!.length}, expected: ${styleSpaceDimensions[i]}');
+    }
 
     // for (var i = 0; i < outputs.length; i++) {
     //   print('Output o${i + 1} length: ${outputs[i]!.length}, expected: ${styleSpaceDimensions[i]}');
     // }
     //
-    for (var i = 0; i < startS.length; i++) {
-      print('startS[$i] length: ${startS[i].length}, expected: ${clipTextDimensions[i]}');
-    }
+    // for (var i = 0; i < startS.length; i++) {
+    //   print('startS[$i] length: ${startS[i].length}, expected: ${clipTextDimensions[i]}');
+    // }
 
     final editsSs = <Float32List>[];
     for (var i = 0; i < styleSpaceIndicesWithoutToRgb.length; i++) {
-      final ssIndex = styleSpaceIndicesWithoutToRgb[i];
       final output = outputs[i]!; // Берем тензоры последовательно
-      final expectedLength = clipTextDimensions[ssIndex];
-      if (output.length != expectedLength) {
-        print('Warning: Output o${i + 1} has length ${output.length}, expected $expectedLength. Adjusting.');
-        final adjustedOutput = Float32List(expectedLength);
-        for (var j = 0; j < min(output.length, expectedLength); j++) {
-          adjustedOutput[j] = output[j];
-        }
-        editsSs.add(adjustedOutput);
-      } else {
-        editsSs.add(Float32List.fromList(output));
-      }
-      print('editsSs[$i] length: ${editsSs[i].length}, startS[$ssIndex] length: ${startS[ssIndex].length}');
+      editsSs.add(Float32List.fromList(output));
+      // print('editsSs[$i] length: ${editsSs[i].length}, startS[$ssIndex] length: ${startS[ssIndex].length}');
     }
 
     final editsRgb = <Float32List>[];
     for (var i = 0; i < toRgbIndices.length; i++) {
-      final rgbIndex = toRgbIndices[i];
       final output = outputs[styleSpaceIndicesWithoutToRgb.length + i]!;
-      final expectedLength = clipTextDimensions[rgbIndex];
-      if (output.length != expectedLength) {
-        print('Warning: Output o${styleSpaceIndicesWithoutToRgb.length + i + 1} has length ${output.length}, expected $expectedLength. Adjusting.');
-        final adjustedOutput = Float32List(expectedLength);
-        for (var j = 0; j < min(output.length, expectedLength); j++) {
-          adjustedOutput[j] = output[j];
-        }
-        editsRgb.add(adjustedOutput);
-      } else {
-        editsRgb.add(Float32List.fromList(output));
-      }
-      print('editsRgb[$i] length: ${editsRgb[i].length}, startS[$rgbIndex] length: ${startS[rgbIndex].length}');
+      editsRgb.add(Float32List.fromList(output));
+      // print('editsRgb[$i] length: ${editsRgb[i].length}, startS[$rgbIndex] length: ${startS[rgbIndex].length}');
+    }
+
+    _logTensorStats('editsSs', editsSs, List.generate(editsSs.length, (i) => 'edit_ss_$i'));
+    _logTensorStats('editsRgb', editsRgb, List.generate(editsRgb.length, (i) => 'edit_rgb_$i'));
+    bool hasInvalidValues(Float32List tensor) {
+      return tensor.any((val) => val.isNaN || val.isInfinite);
+    }
+    if (editsSs.any(hasInvalidValues) || editsRgb.any(hasInvalidValues)) {
+      throw Exception('Invalid values in editsSs or editsRgb');
     }
 
     // Применение фактора к StyleSpace направлениям

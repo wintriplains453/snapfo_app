@@ -246,8 +246,6 @@ class InferenceRunner {
     late List<Float32List> secondOut;
     if (isStylespace) {
       final (arrA, arrB) = editedWE4e as (List<Float32List>, List<Float32List>);
-      print('arrA lengths: ${arrA.map((t) => t.length).toList()}');
-      print('arrB lengths: ${arrB.map((t) => t.length).toList()}');
 
       final selectedInputs = [
         ...arrA.sublist(0, 9), // style_1–9 (должны быть 512)
@@ -355,9 +353,9 @@ class InferenceRunner {
   static Future<List<Float32List>> _runDecoderRgbWithoutNewFeature(List<Float32List> inputs) async {
     if (_decoderRgbWithoutNewFeatureSession == null) throw Exception('Decoder RGB model not loaded');
 
-    for (int i = 0; i < inputs.length; i++) {
-      print('inputs[$i] length: ${inputs[i].length}');
-    }
+    // for (int i = 0; i < inputs.length; i++) {
+    //   print('inputs[$i] length: ${inputs[i].length}');
+    // }
 
     final inputMap = <String, CustomTensor>{};
     for (int i = 0; i < 9; i++) {
@@ -427,7 +425,7 @@ class InferenceRunner {
         512 * 64 * 64 // new_feature
       ];
       for (var i = 0; i < inputs.length; i++) {
-        print('inputs[$i] length: ${inputs[i].length}, expected: ${expectedLengths[i]}');
+        // print('inputs[$i] length: ${inputs[i].length}, expected: ${expectedLengths[i]}');
         if (inputs[i].length != expectedLengths[i]) {
           throw Exception('Input $i has length ${inputs[i].length}, expected ${expectedLengths[i]}');
         }
@@ -453,8 +451,6 @@ class InferenceRunner {
       inputMap['to_rgb_stylespace_9'] = CustomTensor.createTensorWithDataList(inputs[25], [1, 32]);
       inputMap['new_feature'] = CustomTensor.createTensorWithDataList(inputs[26], [1, 512, 64, 64]);
 
-      print('[Isolate] Input map prepared');
-
       // Выполнение модели
       final results = await _decoderRgbWithNewFeatureSession!.runAsync(
         CustomRunOptions(),
@@ -466,7 +462,7 @@ class InferenceRunner {
         throw Exception('[Isolate] No output from RGB decoder with new feature');
       }
 
-      print('[Isolate] _runDecoderRgbWithNewFeature success');
+      print('_runDecoderRgbWithNewFeature success');
       return [results[0]!];
   }
 

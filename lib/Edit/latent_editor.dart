@@ -124,8 +124,6 @@ class LatentEditor {
 
     print('editedSsList length: ${correctedSsList.length}, expected: 17');
     print('editedRgbList length: ${correctedRgbList.length}, expected: 9');
-    _logTensorStats('correctedSsList', correctedSsList, List.generate(17, (i) => 'style_out_$i'));
-    _logTensorStats('correctedRgbList', correctedRgbList, List.generate(9, (i) => 'rgb_out_$i'));
 
     // Возвращаем кортеж для StyleSpace
     return (correctedSsList, correctedRgbList);

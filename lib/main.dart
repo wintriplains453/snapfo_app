@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:opencv_dart/opencv.dart' as cv;
 import 'Edit/edit.dart';
+import 'package:image/image.dart' as img;
 import 'Edit/inference_runner.dart';
 
 void main() {
@@ -61,16 +62,43 @@ class _HomePageState extends State<HomePage> {
       if (image is Uint8List) return image;
       if (image is cv.Mat) return cv.imencode('.jpg', image);
 
-      if (image is Image) {
-        final completer = Completer<ui.Image>();
-        final imageStream = image.image.resolve(ImageConfiguration.empty);
-        imageStream.addListener(ImageStreamListener((info, _) {
-          completer.complete(info.image);
-        }));
+      if (image is ui.Image) {
+        try {
+          final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+          if (byteData == null) {
+            throw Exception("Failed to convert ui.Image to byte data");
+          }
+          return byteData.buffer.asUint8List();
+        } catch (e) {
+          print("Error converting ui.Image: $e");
+          return null;
+        }
+      }
 
-        final uiImage = await completer.future;
-        final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.png);
-        return byteData?.buffer.asUint8List();
+      if (image is img.Image) {
+        // Convert img.Image to Uint8List
+        return img.encodePng(image); // Or use img.encodeJpg(image) for JPEG
+      }
+
+      if (image is Image) {
+        // Handle Flutter Image widget
+        if (image.image is MemoryImage) {
+          return (image.image as MemoryImage).bytes;
+        } else if (image.image is FileImage) {
+          final file = (image.image as FileImage).file;
+          return await file.readAsBytes();
+        } else {
+          // Convert Image widget to ui.Image
+          final completer = Completer<ui.Image>();
+          final imageStream = image.image.resolve(ImageConfiguration.empty);
+          imageStream.addListener(ImageStreamListener((info, _) {
+            completer.complete(info.image);
+          }));
+
+          final uiImage = await completer.future;
+          final byteData = await uiImage.toByteData(format: ui.ImageByteFormat.png);
+          return byteData?.buffer.asUint8List();
+        }
       }
 
       print("Unsupported image type: ${image.runtimeType}");
