@@ -8,6 +8,7 @@ import 'package:opencv_dart/opencv.dart' as cv;
 import 'Edit/edit.dart';
 import 'package:image/image.dart' as img;
 import 'Edit/inference_runner.dart';
+import 'package:face_alignment/face_alignment.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -125,8 +126,8 @@ class _HomePageState extends State<HomePage> {
 
       final edited = await ImageEditor.edit(
         inputBytes: bytes,
-        editingName: 'styleclip_global_face with hair_face with blonde hair_0.2',
-        editingDegree: 16.0,
+        editingName: 'age',
+        editingDegree: 10.0,
         align: false,
         combinedPreEditor: false,
         context: context,
@@ -181,6 +182,63 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class FaceAlignmentDemo extends StatefulWidget {
+  @override
+  _FaceAlignmentDemoState createState() => _FaceAlignmentDemoState();
+}
+
+
+class _FaceAlignmentDemoState extends State<FaceAlignmentDemo> {
+  File? _image;
+  File? _alignedImage;
+  final picker = ImagePicker();
+
+  Future<void> _pickImage() async {
+    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _image = File(pickedFile.path);
+      });
+      try {
+        final alignedPath = await FaceAlignment.alignFaceAsync(pickedFile.path);
+        setState(() {
+          _alignedImage = File(alignedPath);
+        });
+      } catch (e) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Face Alignment Demo')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _image == null
+                ? Text('No image selected.')
+                : Image.file(_image!, height: 200),
+            SizedBox(height: 20),
+            _alignedImage == null
+                ? Text('No aligned image.')
+                : Image.file(_alignedImage!, height: 200),
+            SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _pickImage,
+              child: Text('Pick and Align Image'),
+            ),
+          ],
+        ),
       ),
     );
   }

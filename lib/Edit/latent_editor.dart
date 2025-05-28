@@ -10,18 +10,11 @@ class LatentEditor {
   };
 
   static const styleSpaceDimensions = [
-    512, 512, 512, 512, 512, 512, 512, 512, 512, 512, // 10 x 512 (style_out_0–9)
-    256, 256, // 2 x 256 (style_out_10–11)
-    128, 128, // 2 x 128 (style_out_12–13)
-    64, 64, // 2 x 64 (style_out_14–15)
-    32, // 1 x 32 (style_out_16)
-    512, // 1 x 512 (rgb_out_0)
-    512, 512, 512, // 3 x 512 (rgb_out_1–3)
-    512, // 1 x 512 (rgb_out_4)
-    256, // 1 x 256 (rgb_out_5)
-    128, // 1 x 128 (rgb_out_6)
-    64, // 1 x 64 (rgb_out_7)
-    32, // 1 x 32 (rgb_out_8)
+    512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, // 15 x 512
+    256, 256, 256, // 3 x 256
+    128, 128, 128, // 3 x 128
+    64, 64, 64, // 3 x 64
+    32, 32, // 2 x 32
   ];
 
   /// Logs tensor statistics for debugging
@@ -52,18 +45,19 @@ class LatentEditor {
       BuildContext context,
       ) async {
     print('[LatentEditor.getEditedLatent] Starting for editingName=$editingName, degree=$editingDegree');
+    print('[LatentEditor] originalLatent length=${originalLatent.length}, expected=9216');
 
     if (interfaceganDirections.containsKey(editingName)) {
       final sessionKey = interfaceganDirections[editingName]!;
       print('[LatentEditor] Running InterfaceGAN for $sessionKey');
       final session = CustomSession(sessionKey);
-      final latentTensor = CustomTensor.createTensorWithDataList(originalLatent, [1, originalLatent.length]);
+      final latentTensor = CustomTensor.createTensorWithDataList(originalLatent, [1, 18, 512]);
       final degreeTensor = CustomTensor.createTensorWithDataList(Float32List.fromList([editingDegree]), [1]);
 
       final outputs = await session.runAsync(
         CustomRunOptions(),
-        {'latent': latentTensor, 'degree': degreeTensor},
-        outputNames: ['output'],
+        {'start_w': latentTensor, 'factor': degreeTensor},
+        outputNames: ['edited_age'],
       );
       if (outputs.isEmpty || outputs[0] == null) {
         throw Exception('No output from $sessionKey');
@@ -73,62 +67,87 @@ class LatentEditor {
     } else if (editingName.startsWith('styleclip_global_')) {
       print('[LatentEditor] Running StyleClip for $editingName');
       final session = CustomSession('decoder_stylespace');
-    final latentTensor = CustomTensor.createTensorWithDataList(originalLatent, [1, 18, 512]);
+      final latentTensor = CustomTensor.createTensorWithDataList(originalLatent, [1, 18, 512]);
 
-    final outputModelNames = [
-    ...List.generate(17, (i) => 'style_out_$i'),
-    ...List.generate(9, (i) => 'rgb_out_$i'),
-    ];
+      final outputModelNames = [
+      ...List.generate(17, (i) => 'style_out_$i'),
+      ...List.generate(9, (i) => 'rgb_out_$i'),
+      ];
 
-    final outputs = await session.runAsync(
-    CustomRunOptions(),
-    {'w': latentTensor},
-    outputNames: outputModelNames,
-    );
+      final outputs = await session.runAsync(
+      CustomRunOptions(),
+      {'w': latentTensor},
+      outputNames: outputModelNames,
+      );
 
-    print('decoder_stylespace success return!!!!');
-    if (outputs.any((output) => output == null)) {
-     throw Exception('Invalid outputs from decoder_stylespace');
-    }
-
-    // Преобразуем выходы в список Float32List
-    final stylespaceLatent = outputs.cast<Float32List>();
-
-    // Вызов StyleClip редактирования
-    final (editedSsList, editedRgbList) = await StyleClipEditor.getStyleclipGlobalEdits(
-    stylespaceLatent,
-    editingDegree,
-    editingName,
-    context,
-    );
-
-    // Проверяем и корректируем размеры editedSsList
-    final correctedSsList = List<Float32List>.generate(17, (index) {
-      final expectedLength = styleSpaceDimensions[index];
-      if (editedSsList[index].length != expectedLength) {
-        print('[LatentEditor] Warning: editedSsList[$index] has length ${editedSsList[index].length}, expected $expectedLength. Using fallback.');
-        return Float32List(expectedLength)..fillRange(0, expectedLength, 0.0);
+      print('decoder_stylespace success return!!!!');
+      if (outputs.any((output) => output == null)) {
+       throw Exception('Invalid outputs from decoder_stylespace');
       }
-    return Float32List.fromList(editedSsList[index]);
-    });
 
-    // Проверяем и корректируем размеры editedRgbList
-    final correctedRgbList = List<Float32List>.generate(9, (index) {
-      final expectedLength = styleSpaceDimensions[17 + index];
-      if (editedRgbList[index].length != expectedLength) {
-        print('[LatentEditor] Warning: editedRgbList[$index] has length ${editedRgbList[index].length}, expected $expectedLength. Using fallback.');
-        return Float32List(expectedLength)..fillRange(0, expectedLength, 0.0);
+      // Преобразуем выходы в список Float32List
+      final stylespaceLatent = List<Float32List>.generate(26, (i) {
+        final expectedLength = styleSpaceDimensions[i];
+        if (outputs[i] == null || outputs[i]!.length != expectedLength) {
+          print('Warning: Output $i has length ${outputs[i]?.length ?? 'N/A'}, expected $expectedLength. Using zero-filled tensor.');
+          return Float32List(expectedLength)..fillRange(0, expectedLength, 0.0);
+        }
+        return outputs[i]!;
+      });
+
+      for (var i = 0; i < stylespaceLatent.length; i++) {
+        if (stylespaceLatent[i].length != styleSpaceDimensions[i]) {
+          print('Error: stylespaceLatent[$i] has length ${stylespaceLatent[i].length}, expected ${styleSpaceDimensions[i]}');
+        }
       }
-      return Float32List.fromList(editedRgbList[index]);
-    });
 
-    print('editedSsList length: ${correctedSsList.length}, expected: 17');
-    print('editedRgbList length: ${correctedRgbList.length}, expected: 9');
+      // Вызов StyleClip редактирования
+      final (editedSsList, editedRgbList) = await StyleClipEditor.getStyleclipGlobalEdits(
+      stylespaceLatent,
+      editingDegree,
+      editingName,
+      context,
+      );
 
-    // Возвращаем кортеж для StyleSpace
-    return (correctedSsList, correctedRgbList);
+      // Проверяем и корректируем размеры editedSsList
+      final correctedSsList = List<Float32List>.filled(17, Float32List(0));
+      for (var index = 0; index < 17; index++) {
+        final expectedLength = styleSpaceDimensions[index];
+        if (StyleClipEditor.styleSpaceIndicesWithoutToRgb.contains(index)) {
+          final ssIndex = StyleClipEditor.styleSpaceIndicesWithoutToRgb.indexOf(index);
+          if (ssIndex < editedSsList.length && editedSsList[ssIndex].length == expectedLength) {
+            correctedSsList[index] = Float32List.fromList(editedSsList[ssIndex]);
+          } else {
+            print('[LatentEditor] Warning: editedSsList[$ssIndex] has length ${ssIndex < editedSsList.length ? editedSsList[ssIndex].length : 'N/A'}, expected $expectedLength. Using fallback.');
+            correctedSsList[index] = Float32List(expectedLength)..fillRange(0, expectedLength, 0.0);
+          }
+        } else {
+          correctedSsList[index] = Float32List(expectedLength)..fillRange(0, expectedLength, 0.0);
+        }
+        print('correctedSsList o${index + 1} has length ${correctedSsList[index]!.length}');
+      }
+
+      // Проверяем и корректируем размеры editedRgbList
+      final correctedRgbList = List<Float32List>.filled(9, Float32List(0));
+      for (var index = 0; index < 9; index++) {
+        final expectedLength = styleSpaceDimensions[StyleClipEditor.toRgbIndices[index]];
+        if (index < editedRgbList.length && editedRgbList[index].length == expectedLength) {
+          correctedRgbList[index] = Float32List.fromList(editedRgbList[index]);
+        } else {
+          print('[LatentEditor] Warning: editedRgbList[$index] has length ${index < editedRgbList.length ? editedRgbList[index].length : 'N/A'}, expected $expectedLength. Using fallback.');
+          correctedRgbList[index] = Float32List(expectedLength)..fillRange(0, expectedLength, 0.0);
+        }
+        print('correctedRgbList o${index + 1} has length ${correctedRgbList[index]!.length}');
+      }
+
+      print('editedSsList length: ${correctedSsList.length}, expected: 17');
+      print('editedSsList length: ${correctedSsList.length}, expected: 17');
+      print('editedRgbList length: ${correctedRgbList.length}, expected: 9');
+
+      // Возвращаем кортеж для StyleSpace
+      return (correctedSsList, correctedRgbList);
     } else {
-    throw Exception('Edit name $editingName is not available');
+      throw Exception('Edit name $editingName is not available');
     }
   }
 }

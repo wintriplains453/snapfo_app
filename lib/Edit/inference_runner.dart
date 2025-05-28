@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
+import 'package:tflite_flutter/tflite_flutter.dart';
 import 'package:snapfo_app/onnx_wrapper.dart';
 import 'latent_editor.dart';
 import 'package:flutter/material.dart';
@@ -56,6 +56,19 @@ class InferenceRunner {
     }
   }
 
+  static Float32List createZerosLike(Float32List input) {
+    return Float32List(input.length);
+  }
+
+  static void logTensor(String name, Float32List tensor) {
+    print(name);
+    for (var i = 0; i < tensor.length; i++) {
+      print('${tensor[i]}');
+    }
+  }
+
+
+
   /// Инициализация окружения
   static Future<void> initEnv() async {
     try {
@@ -74,12 +87,12 @@ class InferenceRunner {
     await Future.wait([
       _loadModel('interpolate', 'assets/models/interpolate.onnx'),
       _loadModel('invert', 'assets/models/invert_compressed.onnx'),
-      _loadModel('fuser', 'assets/models/fuser_compressed.onnx'),
+      _loadModel('fuser', 'assets/models/fuser.onnx'),
       _loadModel('e4e_encoder', 'assets/models/e4e_encoder_compressed.onnx'),
       _loadModel('decoder_without_new_feature', 'assets/models/decoder_without_new_feature.onnx'),
       _loadModel('decoder_rgb_without_new_feature', 'assets/models/decoder_rgb_without_new_feature.onnx'),
-      _loadModel('encoder', 'assets/models/encoder_compressed.onnx'),
-      _loadModel('decoder_with_new_feature', 'assets/models/decoder_with_new_feature_compressed.onnx'),
+      _loadModel('encoder', 'assets/models/encoder.onnx'),
+      _loadModel('decoder_with_new_feature', 'assets/models/decoder_with_new_feature.onnx'),
       _loadModel('decoder_rgb_with_new_feature', 'assets/models/decoder_rgb_with_new_feature.onnx'),
       _loadModel('interfacegan_age', 'assets/models/interfacegan_age.onnx'),
       _loadModel('decoder_stylespace', 'assets/models/decoder_stylespace.onnx'),
@@ -101,7 +114,6 @@ class InferenceRunner {
     CustomSession('clip_text_encoder_compressed');
 
     print('[loadModels] All models loaded successfully!');
-
   }
 
   static final TensorPool _tensorPool = TensorPool();
@@ -143,7 +155,7 @@ class InferenceRunner {
       throw Exception('$editingName model not loaded. Call loadModels()');
     }
 
-    final latentTensor = CustomTensor.createTensorWithDataList(latent, [1, latent.length]);
+    final latentTensor = CustomTensor.createTensorWithDataList(latent, [1, 18, 512]);
     final degreeTensor = CustomTensor.createTensorWithDataList(
       Float32List.fromList([degree]),
       [1],
@@ -168,35 +180,64 @@ class InferenceRunner {
   // Аналог Python: run_on_batch
   static Future<(Float32List, ResultBatch)> runOnBatch(Float32List inputTensor) async {
     // Шаг 1: Запуск interpolate.onnx
+    print('Input shape: ${inputTensor.length}, first 10 values: ${inputTensor.sublist(0, 10)}');
     final xOut = await _runInterpolate(inputTensor);
     final x = xOut[0];
+    print('Interpolate output shape: ${x.length}, first 10 values: ${x.sublist(0, 10)}');
     xOut.clear();
 
     // Шаг 2: Запуск invert.onnx
     final invertOut = await _runInvert(x);
     final wRecon = invertOut[0];
     final predictedFeat = invertOut[1];
+    print('wRecon shape: ${wRecon.length}, first 10 values: ${wRecon.sublist(0, 10)}');
+    print('predictedFeat shape: ${predictedFeat.length}, first 10 values: ${predictedFeat.sublist(0, 10)}');
     invertOut.clear();
 
-    // Шаг 3: Запуск decoder_without_new_feature.onnx
+    // Шаг 3: Запуск decoder_without_new_feature.onnx для wRecon
     final decoderOut = await _runDecoderWithoutNewFeature(wRecon);
     final wFeat = decoderOut[1];
+    print('wFeat shape: ${wFeat.length}, first 10 values: ${wFeat.sublist(0, 10)}');
     decoderOut.clear();
 
     // Шаг 4: Запуск fuser.onnx
     final fusedFeat = await _runFuser(_concatAlongAxis1(predictedFeat, wFeat));
+    print('fusedFeat shape: ${fusedFeat.length}, first 10 values: ${fusedFeat.sublist(0, 10)}');
 
-    // Шаг 5: Запуск e4e_encoder.onnx
+    // Шаг 5: Вычисление delta (fs_x - fs_y)
+    // Получаем fs_x из wRecon
+    final fsXOut = await _runDecoderWithoutNewFeature(wRecon);
+    final fsX = fsXOut[1];
+    fsXOut.clear();
+
+    // Получаем fs_y из wE4e
     final wE4e = await _runE4eEncoder(x);
-    // OnnxWrapper.disposeModel('e4e_encoder');
+    print('wE4e shape: ${wE4e.length}, first 10 values: ${wE4e.sublist(0, 10)}');
+    final fsYOut = await _runDecoderWithoutNewFeature(wE4e);
+    final fsY = fsYOut[1];
+    fsYOut.clear();
 
-    // Формируем image
-    final imageOut = await _runDecoderWithNewFeature([wRecon, fusedFeat]);
+    print('fsX shape: ${fsX.length}, first 10 values: ${fsX.sublist(0, 10)}');
+    print('fsY shape: ${fsY.length}, first 10 values: ${fsY.sublist(0, 10)}');
+
+    // Вычисляем delta
+    final delta = _elementwiseSubtract(fsX, fsY);
+    print('delta shape: ${delta.length}, first 10 values: ${delta.sublist(0, 10)}');
+
+    // Шаг 6: Запуск encoder.onnx
+    final cat = _concatAlongAxis1(fusedFeat, delta);
+    final encoderOut = await _runEncoder(cat);
+    final encodedFeat = encoderOut[0];
+    print('encodedFeat shape: ${encodedFeat.length}, first 10 values: ${encodedFeat.sublist(0, 10)}');
+
+    // Шаг 7: Запуск decoder_with_new_feature.onnx
+    final imageOut = await _runDecoderWithNewFeature([wRecon, encodedFeat]);
     final image = imageOut[0];
+    print('image shape: ${image.length}, first 10 values: ${image.sublist(0, 10)}');
 
     final resultBatch = ResultBatch(
       latents: wRecon,
-      fusedFeat: fusedFeat,
+      fusedFeat: encodedFeat,
       predictedFeat: predictedFeat,
       wE4e: wE4e,
       input: inputTensor,
@@ -241,6 +282,7 @@ class InferenceRunner {
     // 3) Обрабатываем оригинальное w_e4e
     final outOrig = await _runDecoderWithoutNewFeature(wE4e);
     final fsX = outOrig[1];
+    print('fsX shape: ${fsX.length}, first 10 values: ${fsX.sublist(0, 10)}');
 
     // 4) Обрабатываем отредактированное w_e4e
     late List<Float32List> secondOut;
@@ -257,15 +299,19 @@ class InferenceRunner {
       secondOut = await _runDecoderWithoutNewFeature(editedWE4e as Float32List);
     }
     final fsY = secondOut[1];
+    print('fsY shape: ${fsY.length}, first 10 values: ${fsY.sublist(0, 10)}');
     secondOut.clear();
 
     // 5) Вычисляем дельту
     final delta = _elementwiseSubtract(fsX, fsY);
+    print('delta shape: ${delta.length}, first 10 values: ${delta.sublist(0, 10)}');
 
     // 6) Получаем отредактированные фичи
     final cat = _concatAlongAxis1(fusedFeat, delta);
     final editedFeatOut = await _runEncoder(cat);
     final editedFeat = editedFeatOut[0];
+    print('editedFeat shape: ${editedFeat.length}, first 10 values: ${editedFeat.sublist(0, 10)}');
+    print('editedFeat stats: min=${editedFeat.reduce((a, b) => a < b ? a : b)}, max=${editedFeat.reduce((a, b) => a > b ? a : b)}');
 
     // 7) Генерируем финальное изображение
     late List<Float32List> finalOut;
@@ -275,7 +321,8 @@ class InferenceRunner {
     } else {
       finalOut = await _runDecoderWithNewFeature([editedLatents as Float32List, editedFeat]);
     }
-    // editedFeat.clear();
+
+    print('finalOut shape: ${finalOut[0].length}, first 10 values: ${finalOut[0].sublist(0, 10)}');
     return finalOut[0];
   }
 
@@ -319,7 +366,7 @@ class InferenceRunner {
       outputNames: ['fused_feat'],
     );
     if (results.isEmpty || results[0] == null) throw Exception('No output from fuser');
-    ('_runFuser', [results[0]!], ['fused_feat']);
+    _logTensorStats('_runFuser', [results[0]!], ['fused_feat']);
     print('_runFuser success return!!!!');
     return results[0]!;
   }
@@ -353,10 +400,6 @@ class InferenceRunner {
   static Future<List<Float32List>> _runDecoderRgbWithoutNewFeature(List<Float32List> inputs) async {
     if (_decoderRgbWithoutNewFeatureSession == null) throw Exception('Decoder RGB model not loaded');
 
-    // for (int i = 0; i < inputs.length; i++) {
-    //   print('inputs[$i] length: ${inputs[i].length}');
-    // }
-
     final inputMap = <String, CustomTensor>{};
     for (int i = 0; i < 9; i++) {
       if (inputs[i].length != 512) {
@@ -380,6 +423,7 @@ class InferenceRunner {
 
   static Future<List<Float32List>> _runEncoder(Float32List input) async {
     if (_encoderSession == null) throw Exception('Encoder model not loaded');
+
     final inputTensor = CustomTensor.createTensorWithDataList(input, [1, 1024, 64, 64]);
     final results = await _encoderSession!.runAsync(
       CustomRunOptions(),
@@ -397,6 +441,9 @@ class InferenceRunner {
     final latent = inputs[0];
     final newFeature = inputs[1];
 
+    print('latent input to decoder: first 10 values: ${latent.sublist(0, 10)}');
+    print('newFeature input to decoder: first 10 values: ${newFeature.sublist(0, 10)}');
+
     final latentTensor = CustomTensor.createTensorWithDataList(latent, [1, 18, 512]);
     final newFeatureTensor = CustomTensor.createTensorWithDataList(newFeature, [1, 512, 64, 64]);
 
@@ -409,67 +456,70 @@ class InferenceRunner {
       outputNames: ['image'],
     );
     if (results.isEmpty || results[0] == null) throw Exception('No output from decoder with new feature');
+
+    final output = results[0]!;
+    final minVal = output.reduce((a, b) => a < b ? a : b);
+    final maxVal = output.reduce((a, b) => a > b ? a : b);
+    print('DecoderWithNewFeature output range: min=$minVal, max=$maxVal');
+    if (minVal < -1.0 || maxVal > 1.0) {
+      print('Warning: Output values outside expected [-1, 1] range');
+    }
+
     print('_runDecoderWithNewFeature success return!!!!');
     return [results[0]!];
   }
 
   static Future<List<Float32List>> _runDecoderRgbWithNewFeature(List<Float32List> inputs) async {
-      if (_decoderRgbWithNewFeatureSession == null) {
-        throw Exception("Decoder RGB with new feature model not loaded");
-      }
+    if (_decoderRgbWithNewFeatureSession == null) {
+      throw Exception("Decoder RGB with new feature model not loaded");
+    }
 
-      final expectedLengths = [
-        512, 512, 512, 512, 512, 512, 512, 512, 512, 512, // style_1–10
-        256, 256, 128, 128, 64, 64, 32, // style_11–17
-        512, 512, 512, 512, 512, 256, 128, 64, 32, // to_rgb_stylespace_1–9
-        512 * 64 * 64 // new_feature
-      ];
-      for (var i = 0; i < inputs.length; i++) {
-        // print('inputs[$i] length: ${inputs[i].length}, expected: ${expectedLengths[i]}');
-        if (inputs[i].length != expectedLengths[i]) {
-          throw Exception('Input $i has length ${inputs[i].length}, expected ${expectedLengths[i]}');
-        }
-      }
+    final expectedLengths = [
+      512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 256, 256, 128, 128, 64, 64, 32,
+      512, 512, 512, 512, 512, 256, 128, 64, 32, 512 * 64 * 64
+    ];
+    for (var i = 0; i < inputs.length; i++) {
+      print('inputs[$i] length: ${inputs[i].length}, expected: ${expectedLengths[i]}');
+    }
 
-      final inputMap = <String, CustomTensor>{};
-      for (int i = 0; i < 10; i++) {
-        inputMap['style_${i + 1}'] = CustomTensor.createTensorWithDataList(inputs[i], [1, 512]);
-      }
-      inputMap['style_11'] = CustomTensor.createTensorWithDataList(inputs[10], [1, 256]);
-      inputMap['style_12'] = CustomTensor.createTensorWithDataList(inputs[11], [1, 256]);
-      inputMap['style_13'] = CustomTensor.createTensorWithDataList(inputs[12], [1, 128]);
-      inputMap['style_14'] = CustomTensor.createTensorWithDataList(inputs[13], [1, 128]);
-      inputMap['style_15'] = CustomTensor.createTensorWithDataList(inputs[14], [1, 64]);
-      inputMap['style_16'] = CustomTensor.createTensorWithDataList(inputs[15], [1, 64]);
-      inputMap['style_17'] = CustomTensor.createTensorWithDataList(inputs[16], [1, 32]);
-      for (int i = 0; i < 5; i++) {
-        inputMap['to_rgb_stylespace_${i + 1}'] = CustomTensor.createTensorWithDataList(inputs[17 + i], [1, 512]);
-      }
-      inputMap['to_rgb_stylespace_6'] = CustomTensor.createTensorWithDataList(inputs[22], [1, 256]);
-      inputMap['to_rgb_stylespace_7'] = CustomTensor.createTensorWithDataList(inputs[23], [1, 128]);
-      inputMap['to_rgb_stylespace_8'] = CustomTensor.createTensorWithDataList(inputs[24], [1, 64]);
-      inputMap['to_rgb_stylespace_9'] = CustomTensor.createTensorWithDataList(inputs[25], [1, 32]);
-      inputMap['new_feature'] = CustomTensor.createTensorWithDataList(inputs[26], [1, 512, 64, 64]);
+    final inputMap = <String, CustomTensor>{};
+    for (int i = 0; i < 10; i++) {
+      inputMap['style_${i + 1}'] = CustomTensor.createTensorWithDataList(inputs[i], [1, 512]);
+    }
+    inputMap['style_11'] = CustomTensor.createTensorWithDataList(inputs[10], [1, 256]);
+    inputMap['style_12'] = CustomTensor.createTensorWithDataList(inputs[11], [1, 256]);
+    inputMap['style_13'] = CustomTensor.createTensorWithDataList(inputs[12], [1, 128]);
+    inputMap['style_14'] = CustomTensor.createTensorWithDataList(inputs[13], [1, 128]);
+    inputMap['style_15'] = CustomTensor.createTensorWithDataList(inputs[14], [1, 64]);
+    inputMap['style_16'] = CustomTensor.createTensorWithDataList(inputs[15], [1, 64]);
+    inputMap['style_17'] = CustomTensor.createTensorWithDataList(inputs[16], [1, 32]);
+    for (int i = 0; i < 5; i++) {
+      inputMap['to_rgb_stylespace_${i + 1}'] = CustomTensor.createTensorWithDataList(inputs[17 + i], [1, 512]);
+    }
+    inputMap['to_rgb_stylespace_6'] = CustomTensor.createTensorWithDataList(inputs[22], [1, 256]);
+    inputMap['to_rgb_stylespace_7'] = CustomTensor.createTensorWithDataList(inputs[23], [1, 128]);
+    inputMap['to_rgb_stylespace_8'] = CustomTensor.createTensorWithDataList(inputs[24], [1, 64]);
+    inputMap['to_rgb_stylespace_9'] = CustomTensor.createTensorWithDataList(inputs[25], [1, 32]);
+    inputMap['new_feature'] = CustomTensor.createTensorWithDataList(inputs[26], [1, 512, 64, 64]);
 
-      // Выполнение модели
-      final results = await _decoderRgbWithNewFeatureSession!.runAsync(
-        CustomRunOptions(),
-        inputMap,
-        outputNames: ['image'],
-      );
+    final results = await _decoderRgbWithNewFeatureSession!.runAsync(
+      CustomRunOptions(),
+      inputMap,
+      outputNames: ['image'],
+    );
 
-      if (results.isEmpty || results[0] == null) {
-        throw Exception('[Isolate] No output from RGB decoder with new feature');
-      }
+    if (results.isEmpty || results[0] == null) {
+      throw Exception('[Isolate] No output from RGB decoder with new feature');
+    }
 
-      print('_runDecoderRgbWithNewFeature success');
-      return [results[0]!];
+    print('_runDecoderRgbWithNewFeature success');
+    return [results[0]!];
   }
 
   // Утилиты
   static Float32List _elementwiseSubtract(Float32List a, Float32List b) {
     if (a.length != b.length) throw Exception('Arrays length mismatch');
-    final key = 'subtract_${a.length}';
+    final key = 'concat_${a.length}_${b.length}';
     final result = _tensorPool.getBuffer(key, a.length);
     for (int i = 0; i < a.length; i++) {
       result[i] = a[i] - b[i];

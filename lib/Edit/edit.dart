@@ -10,17 +10,33 @@ class ImageEditor {
     final height = shape[2];
     final width = shape[3];
 
+    if (x.length != channels * height * width) {
+      throw Exception('Invalid input size: expected ${channels * height * width}, got ${x.length}');
+    }
+
+    // Диагностика: выводим диапазон значений для каждого канала
+    for (var c = 0; c < channels; c++) {
+      final start = c * height * width;
+      final end = start + height * width;
+      final channelData = x.sublist(start, end);
+      final min = channelData.reduce((a, b) => a < b ? a : b);
+      final max = channelData.reduce((a, b) => a > b ? a : b);
+      print('Channel $c (RGB order: ${["R", "G", "B"][c]}): min=$min, max=$max');
+    }
+
     final out = Float32List(height * width * channels);
     for (var h = 0; h < height; h++) {
       for (var w = 0; w < width; w++) {
-        for (var c = 0; c < channels; c++) {
-          final srcIndex = c * height * width + h * width + w;
-          final dstIndex = (h * width + w) * channels + c;
-          out[dstIndex] = (x[srcIndex] + 1) / 2;
-          if (out[dstIndex] < 0) out[dstIndex] = 0;
-          if (out[dstIndex] > 1) out[dstIndex] = 1;
-          out[dstIndex] *= 255;
-        }
+        // Input tensor is in CHW format, RGB order
+        final rIndex = 0 * height * width + h * width + w; // Red
+        final gIndex = 1 * height * width + h * width + w; // Green
+        final bIndex = 2 * height * width + h * width + w; // Blue
+        final dstIndex = (h * width + w) * channels;
+
+        // Normalize from [-1, 1] to [0, 255]
+        out[dstIndex] = ((x[rIndex] + 1) / 2).clamp(0, 1) * 255; // R
+        out[dstIndex + 1] = ((x[gIndex] + 1) / 2).clamp(0, 1) * 255; // G
+        out[dstIndex + 2] = ((x[bIndex] + 1) / 2).clamp(0, 1) * 255; // B
       }
     }
 
@@ -31,9 +47,9 @@ class ImageEditor {
         image.setPixelRgba(
           w,
           h,
-          out[index].round(),
-          out[index + 1].round(),
-          out[index + 2].round(),
+          out[index].round(),     // R
+          out[index + 1].round(), // G
+          out[index + 2].round(), // B
           255,
         );
       }
@@ -83,6 +99,12 @@ class ImageEditor {
     print('Inference: ${DateTime.now().difference(inferenceStart).inMilliseconds} ms');
 
     // Постобработка
+
+    final image = await Preprocess.loadNormalizedFromJson('assets/result.json');
+    print('Blue channel sample: ${editedImage.sublist(0, 10)}');
+    print('Green channel sample: ${editedImage.sublist(1024 * 1024, 1024 * 1024 + 10)}');
+    print('Red channel sample: ${editedImage.sublist(2 * 1024 * 1024, 2 * 1024 * 1024 + 10)}');
+
     final resultImage = await prepareNp(editedImage, [1, 3, 1024, 1024]);
 
     print('Total: ${DateTime.now().difference(start).inMilliseconds} ms');

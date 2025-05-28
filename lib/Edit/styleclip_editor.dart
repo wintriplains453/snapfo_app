@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:flutter/services.dart';
-
 import 'package:logger/logger.dart';
 import '../onnx_wrapper.dart';
 import 'dart:convert';
@@ -18,21 +17,21 @@ final logger = Logger(
 
 void _logTensorStats(String stage, List<Float32List> tensors, List<String> names) {
   for (int i = 0; i < tensors.length; i++) {
-  final tensor = tensors[i];
-  final name = names[i];
-  bool hasNaN = false;
-  bool hasInfinity = false;
-  double minVal = double.infinity;
-  double maxVal = -double.infinity;
-  for (var val in tensor) {
-    if (val.isNaN) hasNaN = true;
-    if (val.isInfinite) hasInfinity = true;
-    if (!val.isNaN && !val.isInfinite) {
-      minVal = minVal < val ? minVal : val;
-      maxVal = maxVal > val ? maxVal : val;
+    final tensor = tensors[i];
+    final name = names[i];
+    bool hasNaN = false;
+    bool hasInfinity = false;
+    double minVal = double.infinity;
+    double maxVal = -double.infinity;
+    for (var val in tensor) {
+      if (val.isNaN) hasNaN = true;
+      if (val.isInfinite) hasInfinity = true;
+      if (!val.isNaN && !val.isInfinite) {
+        minVal = minVal < val ? minVal : val;
+        maxVal = maxVal > val ? maxVal : val;
+      }
     }
-  }
-  print('$stage [$name] stats: hasNaN=$hasNaN, hasInfinity=$hasInfinity, min=$minVal, max=$maxVal, length=${tensor.length}');
+    print('$stage [$name] stats: hasNaN=$hasNaN, hasInfinity=$hasInfinity, min=$minVal, max=$maxVal, length=${tensor.length}');
   }
 }
 
@@ -83,32 +82,21 @@ class StyleClipEditor {
   ];
 
   static const styleSpaceDimensions = [
-    512, 512, 512, 512, 512, 512, 512, 512, 512, 512, // style_out_0–9
-    256, 256, // style_out_10–11
-    128, 128, // style_out_12–13
-    64, 64, // style_out_14–15
-    32, // style_out_16
-    512, // rgb_out_0
-    512, 512, 512, // rgb_out_1–3
-    512, // rgb_out_4
-    256, // rgb_out_5
-    128, // rgb_out_6
-    64, // rgb_out_7
-    32, // rgb_out_8
+    512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 512, // 15 x 512
+    256, 256, 256, // 3 x 256
+    128, 128, 128, // 3 x 128
+    64, 64, 64, // 3 x 64
+    32, 32, // 2 x 32
   ];
 
-  static const toRgbIndices = [17, 18, 19, 20, 21, 22, 23, 24, 25];
-  static const styleSpaceIndicesWithoutToRgb = [
-    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, // style_out_0–9 (512)
-    10, 11, 12, 13, 14, 15, 16 // style_out_10–16 (256, 256, 128, 128, 64, 64, 32)
-  ];
+  static const toRgbIndices = [1, 4, 7, 10, 13, 16, 19, 22, 25];
+  static const styleSpaceIndicesWithoutToRgb = [0, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18, 20, 21, 23, 24];
 
-  // Новая функция для загрузки токенов из JSON
+  // Функция для загрузки токенов из JSON
   static Future<List<List<int>>> loadTokensFromJson() async {
     try {
       final jsonString = await rootBundle.loadString('assets/tokens/blonde.json');
       final List<dynamic> jsonData = json.decode(jsonString);
-      // Преобразуем в List<List<int>>
       final tokens = jsonData.map((dynamic row) => (row as List<dynamic>).cast<int>()).toList();
       return tokens;
     } catch (e) {
@@ -122,11 +110,9 @@ class StyleClipEditor {
       String editingName,
       context,
       ) async {
-
     // Парсинг имени редактирования
     final direction = editingName.replaceFirst('styleclip_global_', '');
     final parts = direction.split('_');
-
     final neutralText = parts[0];
     final targetText = parts[1];
     final disentangleStr = parts[2];
@@ -144,6 +130,7 @@ class StyleClipEditor {
       throw Exception('Invalid tokens: expected 84 sentences with 77 tokens each');
     }
 
+    // Запуск ONNX-модели
     final session = CustomSession('clip_text_encoder_compressed');
     final disentangleTensor = CustomTensor(Float32List.fromList([disentanglement]), [1]);
     final flatTokens = tokens.expand((tokenList) => tokenList).toList();
@@ -162,34 +149,30 @@ class StyleClipEditor {
       outputNames: List.generate(26, (i) => 'o${i + 1}'),
     );
 
+    // Проверка размеров выходных тензоров
     for (var i = 0; i < outputs.length; i++) {
-      print('Output o${i + 1} length: ${outputs[i]!.length}, expected: ${styleSpaceDimensions[i]}');
+      final expectedLength = styleSpaceDimensions[i];
+      if (outputs[i]!.length != expectedLength) {
+        print('Warning: Output o${i + 1} has length ${outputs[i]!.length}, expected $expectedLength. Using zero-filled tensor.');
+        outputs[i] = Float32List(expectedLength);
+      }
     }
 
-    // for (var i = 0; i < outputs.length; i++) {
-    //   print('Output o${i + 1} length: ${outputs[i]!.length}, expected: ${styleSpaceDimensions[i]}');
-    // }
-    //
-    // for (var i = 0; i < startS.length; i++) {
-    //   print('startS[$i] length: ${startS[i].length}, expected: ${clipTextDimensions[i]}');
-    // }
-
+    // Разделение на StyleSpace и toRGB направления
     final editsSs = <Float32List>[];
-    for (var i = 0; i < styleSpaceIndicesWithoutToRgb.length; i++) {
-      final output = outputs[i]!; // Берем тензоры последовательно
-      editsSs.add(Float32List.fromList(output));
-      // print('editsSs[$i] length: ${editsSs[i].length}, startS[$ssIndex] length: ${startS[ssIndex].length}');
-    }
-
     final editsRgb = <Float32List>[];
-    for (var i = 0; i < toRgbIndices.length; i++) {
-      final output = outputs[styleSpaceIndicesWithoutToRgb.length + i]!;
-      editsRgb.add(Float32List.fromList(output));
-      // print('editsRgb[$i] length: ${editsRgb[i].length}, startS[$rgbIndex] length: ${startS[rgbIndex].length}');
+    for (var i = 0; i < styleSpaceDimensions.length; i++) {
+      if (styleSpaceIndicesWithoutToRgb.contains(i)) {
+        editsSs.add(Float32List.fromList(outputs[i]!));
+      } else if (toRgbIndices.contains(i)) {
+        editsRgb.add(Float32List.fromList(outputs[i]!));
+      }
     }
 
     _logTensorStats('editsSs', editsSs, List.generate(editsSs.length, (i) => 'edit_ss_$i'));
     _logTensorStats('editsRgb', editsRgb, List.generate(editsRgb.length, (i) => 'edit_rgb_$i'));
+
+    // Проверка на некорректные значения
     bool hasInvalidValues(Float32List tensor) {
       return tensor.any((val) => val.isNaN || val.isInfinite);
     }
@@ -199,26 +182,52 @@ class StyleClipEditor {
 
     // Применение фактора к StyleSpace направлениям
     final editedSsList = <Float32List>[];
-    for (var i = 0; i < editsSs.length; i++) {
+    for (var i = 0; i < styleSpaceIndicesWithoutToRgb.length; i++) {
       final ssIndex = styleSpaceIndicesWithoutToRgb[i];
+      if (ssIndex >= startS.length) {
+        print('Warning: ssIndex $ssIndex out of range for startS length ${startS.length}');
+        continue;
+      }
       final orig = startS[ssIndex];
       final delta = editsSs[i];
       final out = Float32List(orig.length);
-      for (var j = 0; j < orig.length; j++) {
-        out[j] = orig[j] + (factor / 1.5) * delta[j];
+      if (delta.length == 1) {
+        // Broadcasting scalar value
+        for (var j = 0; j < orig.length; j++) {
+          out[j] = orig[j] + (factor / 1.5) * delta[0];
+        }
+      } else {
+        // Broadcasting delta to match orig length
+        for (var j = 0; j < orig.length; j++) {
+          final deltaIndex = delta.length > 1 ? (j % delta.length) : 0;
+          out[j] = orig[j] + (factor / 1.5) * delta[deltaIndex];
+        }
       }
       editedSsList.add(out);
     }
 
-    // Применение фактора 1.0 к toRGB слоям
+    // Применение фактора к toRGB направлениям
     final editedRgbList = <Float32List>[];
-    for (var i = 0; i < editsRgb.length; i++) {
+    for (var i = 0; i < toRgbIndices.length; i++) {
       final rgbIndex = toRgbIndices[i];
+      if (rgbIndex >= startS.length) {
+        print('Warning: rgbIndex $rgbIndex out of range for startS length ${startS.length}');
+        continue;
+      }
       final orig = startS[rgbIndex];
       final delta = editsRgb[i];
       final out = Float32List(orig.length);
-      for (var j = 0; j < orig.length; j++) {
-        out[j] = orig[j] + (1.0 / 1.5) * delta[j];
+      if (delta.length == 1) {
+        // Broadcasting scalar value
+        for (var j = 0; j < orig.length; j++) {
+          out[j] = orig[j] + (1.0 / 1.5) * delta[0];
+        }
+      } else {
+        // Broadcasting delta to match orig length
+        for (var j = 0; j < orig.length; j++) {
+          final deltaIndex = delta.length > 1 ? (j % delta.length) : 0;
+          out[j] = orig[j] + (1.0 / 1.5) * delta[deltaIndex];
+        }
       }
       editedRgbList.add(out);
     }
