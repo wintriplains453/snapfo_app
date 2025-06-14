@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart' show MethodChannel, PlatformException, rootBundle;
 
 class OnnxWrapper {
-  static const _channel = MethodChannel('com.example.snapfo_app/onnx');
+  static const _channel = MethodChannel('com.example.snapfo_app/float16_converter.dart');
 
   static Future<void> initEnv() async {
     try {

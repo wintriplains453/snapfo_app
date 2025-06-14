@@ -1,42 +1,25 @@
+import 'package:onnxruntime/onnxruntime.dart';
+import 'package:flutter/services.dart' show rootBundle;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
-import 'package:tflite_flutter/tflite_flutter.dart';
-import 'package:snapfo_app/onnx_wrapper.dart';
-import 'latent_editor.dart';
 import 'package:flutter/material.dart';
+import 'package:snapfo_app/libs/convertFP.dart';
 
 class ResultBatch {
   final Float32List latents;
   final Float32List fusedFeat;
   final Float32List predictedFeat;
   final Float32List wE4e;
-  final Float32List input;
-
-  ResultBatch({
+  final Float32List input;  ResultBatch({
     required this.latents,
     required this.fusedFeat,
     required this.predictedFeat,
     required this.wE4e,
     required this.input,
   });
-}
-
-class InferenceRunner {
-  // Сессии для всех моделей
-  static CustomSession? _interpolateSession;
-  static CustomSession? _invertSession;
-  static CustomSession? _fuserSession;
-  static CustomSession? _e4eEncoderSession;
-  static CustomSession? _decoderWithoutNewFeatureSession;
-  static CustomSession? _decoderRgbWithoutNewFeatureSession;
-  static CustomSession? _encoderSession;
-  static CustomSession? _decoderWithNewFeatureSession;
-  static CustomSession? _decoderRgbWithNewFeatureSession;
-
-  static final _interfaceganSessions = <String, CustomSession>{};
-
-  /// Утилита для логирования статистики тензора
-  static void _logTensorStats(String stage, List<Float32List> tensors, List<String> names) {
+}class InferenceRunner {
+  static OrtSession? _interpolateSession;
+  static OrtSession? _invertSession;  static final TensorPool _tensorPool = TensorPool();  static void _logTensorStats(String stage, List<Float32List> tensors, List<String> names) {
     for (int i = 0; i < tensors.length; i++) {
       final tensor = tensors[i];
       final name = names[i];
@@ -54,290 +37,98 @@ class InferenceRunner {
       }
       print('$stage [$name] stats: hasNaN=$hasNaN, hasInfinity=$hasInfinity, min=$minVal, max=$maxVal, length=${tensor.length}');
     }
-  }
-
-  static Float32List createZerosLike(Float32List input) {
+  }  static Float32List createZerosLike(Float32List input) {
     return Float32List(input.length);
-  }
-
-  static void logTensor(String name, Float32List tensor) {
+  }  static void logTensor(String name, Float32List tensor) {
     print(name);
     for (var i = 0; i < tensor.length; i++) {
       print('${tensor[i]}');
     }
-  }
+  }  static List<double> flattenTensor(dynamic tensor) {
+    final List<double> flattened = [];
 
+    void flatten(dynamic value) {
+      if (value is double) {
+        flattened.add(value);
+      } else if (value is List) {
+        for (var item in value) {
+          flatten(item);
+        }
+      } else {
+        throw Exception('Unexpected tensor value type: ${value.runtimeType}');
+      }
+    }
 
+    flatten(tensor);
+    return flattened;
 
-  /// Инициализация окружения
-  static Future<void> initEnv() async {
+  }  static Future<void> initEnv() async {
     try {
-      await OnnxWrapper.initEnv();
+      print('ONNX Runtime environment initialized');
+      final providers = OrtEnv.instance.availableProviders();
+      print('Available ONNX Runtime providers: $providers');
     } catch (e) {
       print('Error initializing ONNX environment: $e');
       rethrow;
     }
-  }
-
-  /// Загрузка всех моделей
-  static Future<void> loadModels() async {
+  }  static Future<void> loadModels() async {
     print('[InferenceRunner.loadModels] Starting...');
 
-    // Загружаем все модели
-    await Future.wait([
-      _loadModel('interpolate', 'assets/models/interpolate.onnx'),
-      _loadModel('invert', 'assets/models/invert_compressed.onnx'),
-      _loadModel('fuser', 'assets/models/fuser.onnx'),
-      _loadModel('e4e_encoder', 'assets/models/e4e_encoder_compressed.onnx'),
-      _loadModel('decoder_without_new_feature', 'assets/models/decoder_without_new_feature.onnx'),
-      _loadModel('decoder_rgb_without_new_feature', 'assets/models/decoder_rgb_without_new_feature.onnx'),
-      _loadModel('encoder', 'assets/models/encoder.onnx'),
-      _loadModel('decoder_with_new_feature', 'assets/models/decoder_with_new_feature.onnx'),
-      _loadModel('decoder_rgb_with_new_feature', 'assets/models/decoder_rgb_with_new_feature.onnx'),
-      _loadModel('interfacegan_age', 'assets/models/interfacegan_age.onnx'),
-      _loadModel('decoder_stylespace', 'assets/models/decoder_stylespace.onnx'),
-      _loadModel('clip_text_encoder_compressed', 'assets/models/clip_text_encoder_compressed.onnx'),
-    ]);
+    try {
+      final interpolateModelBytes = await rootBundle.load('assets/models/interpolateIR9.onnx');
+      final interpolateSessionOptions = OrtSessionOptions()..appendCPUProvider(CPUFlags.useNone);
+      _interpolateSession = OrtSession.fromBuffer(interpolateModelBytes.buffer.asUint8List(), interpolateSessionOptions);
+      print('Model interpolateIR9 loaded successfully');
 
-    // Инициализируем сессии
-    _interpolateSession = CustomSession('interpolate');
-    _invertSession = CustomSession('invert');
-    _fuserSession = CustomSession('fuser');
-    _e4eEncoderSession = CustomSession('e4e_encoder');
-    _decoderWithoutNewFeatureSession = CustomSession('decoder_without_new_feature');
-    _decoderRgbWithoutNewFeatureSession = CustomSession('decoder_rgb_without_new_feature');
-    _encoderSession = CustomSession('encoder');
-    _decoderWithNewFeatureSession = CustomSession('decoder_with_new_feature');
-    _decoderRgbWithNewFeatureSession = CustomSession('decoder_rgb_with_new_feature');
-    _interfaceganSessions['age'] = CustomSession('interfacegan_age');
-    CustomSession('decoder_stylespace');
-    CustomSession('clip_text_encoder_compressed');
+      final invertModelBytes = await rootBundle.load('assets/models/invert_compressed.onnx');
+      final invertSessionOptions = OrtSessionOptions()..appendCPUProvider(CPUFlags.useNone);
+      _invertSession = OrtSession.fromBuffer(invertModelBytes.buffer.asUint8List(), invertSessionOptions);
+      print('Model invert_compressedIR9 loaded successfully');
+    } catch (e) {
+      print('Error loading models: $e');
+      rethrow;
+    }
 
     print('[loadModels] All models loaded successfully!');
+
   }
 
-  static final TensorPool _tensorPool = TensorPool();
-
   static void dispose() {
-    _interpolateSession?.dispose();
-    _invertSession?.dispose();
-    _fuserSession?.dispose();
-    _e4eEncoderSession?.dispose();
-    _decoderWithoutNewFeatureSession?.dispose();
-    _decoderRgbWithoutNewFeatureSession?.dispose();
-    _encoderSession?.dispose();
-    _decoderWithNewFeatureSession?.dispose();
-    _decoderRgbWithNewFeatureSession?.dispose();
-    _interfaceganSessions.forEach((_, session) => session.dispose());
-    _interfaceganSessions.clear();
+    _interpolateSession?.release();
+    _invertSession?.release();
     _tensorPool.clear();
     print('[InferenceRunner.dispose]');
   }
 
-  static Future<void> _loadModel(String key, String assetPath) async {
-    try {
-      await OnnxWrapper.loadModel(key: key, assetPath: assetPath);
-      print('Model $key loaded successfully');
-    } catch (e) {
-      print('Error loading model $key: $e');
-      rethrow;
-    }
-  }
-
-  // Аналог Python: runInterfacegan
-  static Future<Float32List> runInterfacegan(
-      Float32List latent,
-      double degree,
-      String editingName,
-      ) async {
-    final session = _interfaceganSessions[editingName];
-    if (session == null) {
-      throw Exception('$editingName model not loaded. Call loadModels()');
-    }
-
-    final latentTensor = CustomTensor.createTensorWithDataList(latent, [1, 18, 512]);
-    final degreeTensor = CustomTensor.createTensorWithDataList(
-      Float32List.fromList([degree]),
-      [1],
-    );
-
-    final results = await session.runAsync(
-      CustomRunOptions(),
-      {
-        'latent': latentTensor,
-        'degree': degreeTensor,
-      },
-      outputNames: ['output'],
-    );
-
-    if (results.isEmpty || results[0] == null) {
-      throw Exception('No output from $editingName');
-    }
-
-    return results[0]!;
-  }
-
-  // Аналог Python: run_on_batch
-  static Future<(Float32List, ResultBatch)> runOnBatch(Float32List inputTensor) async {
-    // Шаг 1: Запуск interpolate.onnx
-    print('Input shape: ${inputTensor.length}, first 10 values: ${inputTensor.sublist(0, 10)}');
-    final xOut = await _runInterpolate(inputTensor);
-    final x = xOut[0];
-    print('Interpolate output shape: ${x.length}, first 10 values: ${x.sublist(0, 10)}');
-    xOut.clear();
-
-    // Шаг 2: Запуск invert.onnx
-    final invertOut = await _runInvert(x);
-    final wRecon = invertOut[0];
-    final predictedFeat = invertOut[1];
-    print('wRecon shape: ${wRecon.length}, first 10 values: ${wRecon.sublist(0, 10)}');
-    print('predictedFeat shape: ${predictedFeat.length}, first 10 values: ${predictedFeat.sublist(0, 10)}');
-    invertOut.clear();
-
-    // Шаг 3: Запуск decoder_without_new_feature.onnx для wRecon
-    final decoderOut = await _runDecoderWithoutNewFeature(wRecon);
-    final wFeat = decoderOut[1];
-    print('wFeat shape: ${wFeat.length}, first 10 values: ${wFeat.sublist(0, 10)}');
-    decoderOut.clear();
-
-    // Шаг 4: Запуск fuser.onnx
-    final fusedFeat = await _runFuser(_concatAlongAxis1(predictedFeat, wFeat));
-    print('fusedFeat shape: ${fusedFeat.length}, first 10 values: ${fusedFeat.sublist(0, 10)}');
-
-    // Шаг 5: Вычисление delta (fs_x - fs_y)
-    // Получаем fs_x из wRecon
-    final fsXOut = await _runDecoderWithoutNewFeature(wRecon);
-    final fsX = fsXOut[1];
-    fsXOut.clear();
-
-    // Получаем fs_y из wE4e
-    final wE4e = await _runE4eEncoder(x);
-    print('wE4e shape: ${wE4e.length}, first 10 values: ${wE4e.sublist(0, 10)}');
-    final fsYOut = await _runDecoderWithoutNewFeature(wE4e);
-    final fsY = fsYOut[1];
-    fsYOut.clear();
-
-    print('fsX shape: ${fsX.length}, first 10 values: ${fsX.sublist(0, 10)}');
-    print('fsY shape: ${fsY.length}, first 10 values: ${fsY.sublist(0, 10)}');
-
-    // Вычисляем delta
-    final delta = _elementwiseSubtract(fsX, fsY);
-    print('delta shape: ${delta.length}, first 10 values: ${delta.sublist(0, 10)}');
-
-    // Шаг 6: Запуск encoder.onnx
-    final cat = _concatAlongAxis1(fusedFeat, delta);
-    final encoderOut = await _runEncoder(cat);
-    final encodedFeat = encoderOut[0];
-    print('encodedFeat shape: ${encodedFeat.length}, first 10 values: ${encodedFeat.sublist(0, 10)}');
-
-    // Шаг 7: Запуск decoder_with_new_feature.onnx
-    final imageOut = await _runDecoderWithNewFeature([wRecon, encodedFeat]);
-    final image = imageOut[0];
-    print('image shape: ${image.length}, first 10 values: ${image.sublist(0, 10)}');
-
-    final resultBatch = ResultBatch(
-      latents: wRecon,
-      fusedFeat: encodedFeat,
-      predictedFeat: predictedFeat,
-      wE4e: wE4e,
-      input: inputTensor,
-    );
-
-    return (image, resultBatch);
-  }
-
-  // Аналог Python: run_editing_on_batch
-  static Future<Float32List> runEditingOnBatch({
-    required ResultBatch resultBatch,
-    required String editingName,
-    required double editingDegree,
-    required BuildContext context,
-  }) async {
-    return runEditingCore(
-      latent: resultBatch.latents,
-      wE4e: resultBatch.wE4e,
-      fusedFeat: resultBatch.fusedFeat,
-      editingName: editingName,
-      editingDegree: editingDegree,
-      context: context,
-    );
-  }
-
-  // Аналог Python: run_editing_core
-  static Future<Float32List> runEditingCore({
-    required Float32List latent,
-    required Float32List wE4e,
-    required Float32List fusedFeat,
-    required String editingName,
-    required double editingDegree,
-    required BuildContext context,
-  }) async {
-    // 1) Получаем отредактированные латентные представления
-    final editedLatents = await LatentEditor.getEditedLatent(latent, editingName, editingDegree, context);
-    final editedWE4e = await LatentEditor.getEditedLatent(wE4e, editingName, editingDegree, context);
-
-    // 2) Проверяем, используется ли stylespace
-    final isStylespace = editedLatents is (List<Float32List>, List<Float32List>);
-
-    // 3) Обрабатываем оригинальное w_e4e
-    final outOrig = await _runDecoderWithoutNewFeature(wE4e);
-    final fsX = outOrig[1];
-    print('fsX shape: ${fsX.length}, first 10 values: ${fsX.sublist(0, 10)}');
-
-    // 4) Обрабатываем отредактированное w_e4e
-    late List<Float32List> secondOut;
-    if (isStylespace) {
-      final (arrA, arrB) = editedWE4e as (List<Float32List>, List<Float32List>);
-
-      final selectedInputs = [
-        ...arrA.sublist(0, 9), // style_1–9 (должны быть 512)
-        ...arrB.sublist(0, 5), // to_rgb_stylespace_1–5 (должны быть 512)
-      ];
-
-      secondOut = await _runDecoderRgbWithoutNewFeature(selectedInputs);
-    } else {
-      secondOut = await _runDecoderWithoutNewFeature(editedWE4e as Float32List);
-    }
-    final fsY = secondOut[1];
-    print('fsY shape: ${fsY.length}, first 10 values: ${fsY.sublist(0, 10)}');
-    secondOut.clear();
-
-    // 5) Вычисляем дельту
-    final delta = _elementwiseSubtract(fsX, fsY);
-    print('delta shape: ${delta.length}, first 10 values: ${delta.sublist(0, 10)}');
-
-    // 6) Получаем отредактированные фичи
-    final cat = _concatAlongAxis1(fusedFeat, delta);
-    final editedFeatOut = await _runEncoder(cat);
-    final editedFeat = editedFeatOut[0];
-    print('editedFeat shape: ${editedFeat.length}, first 10 values: ${editedFeat.sublist(0, 10)}');
-    print('editedFeat stats: min=${editedFeat.reduce((a, b) => a < b ? a : b)}, max=${editedFeat.reduce((a, b) => a > b ? a : b)}');
-
-    // 7) Генерируем финальное изображение
-    late List<Float32List> finalOut;
-    if (isStylespace) {
-      final (arrA, arrB) = editedLatents as (List<Float32List>, List<Float32List>);
-      finalOut = await _runDecoderRgbWithNewFeature([...arrA, ...arrB, editedFeat]);
-    } else {
-      finalOut = await _runDecoderWithNewFeature([editedLatents as Float32List, editedFeat]);
-    }
-
-    print('finalOut shape: ${finalOut[0].length}, first 10 values: ${finalOut[0].sublist(0, 10)}');
-    return finalOut[0];
-  }
-
-  // Вспомогательные методы для запуска ONNX-моделей
   static Future<List<Float32List>> _runInterpolate(Float32List input) async {
     if (_interpolateSession == null) throw Exception('Interpolate model not loaded');
-    final inputTensor = CustomTensor.createTensorWithDataList(input, [1, 3, 1024, 1024]);
-    final results = await _interpolateSession!.runAsync(
-      CustomRunOptions(),
-      {'x': inputTensor},
-      outputNames: ['output'],
-    );
-    if (results.isEmpty || results[0] == null) throw Exception('No output from interpolate');
+    if (input.length != 1 * 3 * 1024 * 1024) {
+      throw Exception('Input tensor has incorrect length: ${input.length}, expected ${1 * 3 * 1024 * 1024}');
+    }
+
+    final inputTensor = OrtValueTensor.createTensorWithDataList(input, [1, 3, 1024, 1024]);
+    final runOptions = OrtRunOptions();
+    final results = await _interpolateSession!.runAsync(runOptions, {'x': inputTensor});
+
+    if (results!.isEmpty || results[0] == null) throw Exception('No output from interpolate');
+
+// Log raw tensor structure for debugging
+    print('Raw interpolate output type: ${results[0]!.value.runtimeType}');
+// Flatten using robust flattenTensor
+    final flatOutput = Float32List.fromList(flattenTensor(results[0]!.value));
+
+    if (flatOutput.length != 1 * 3 * 256 * 256) {
+      throw Exception('Unexpected interpolate output length: ${flatOutput.length}, expected ${1 * 3 * 256 * 256}');
+    }
+    _logTensorStats('_runInterpolate', [flatOutput], ['output']);
     print('_runInterpolate success return!!!!');
-    return [results[0]!];
+
+    inputTensor.release();
+    results.forEach((element) => element?.release());
+    runOptions.release();
+
+    return [flatOutput];
+
   }
 
   static Future<List<Float32List>> _runInvert(Float32List input) async {
@@ -346,200 +137,110 @@ class InferenceRunner {
       throw Exception('Input tensor has incorrect length: ${input.length}, expected ${1 * 3 * 256 * 256}');
     }
 
-    final inputTensor = CustomTensor.createTensorWithDataList(input, [1, 3, 256, 256]);
-    final results = await _invertSession!.runAsync(
-      CustomRunOptions(),
-      {'input.1': inputTensor},
-      outputNames: ['w_recon', 'predicted_feat'],
+    // Convert input from FP32 to FP16
+    final inputFp16 = convertToFp16(input);
+    print("type of input!!!");
+    print(inputFp16.runtimeType);
+
+    // Create ONNX tensor with FP16 data
+    final inputTensor = OrtValueTensor.createTensorWithDataList(
+      inputFp16,
+      [1, 3, 256, 256],
+      ONNXTensorElementDataType.float16,
     );
-    if (results.length != 2 || results.any((r) => r == null)) throw Exception('Invalid outputs from invert');
+
+    final runOptions = OrtRunOptions();
+    final results = await _invertSession!.runAsync(runOptions, {'input.1': inputTensor});
+
+    if (results!.length != 2 || results.any((r) => r == null)) {
+      throw Exception('Invalid outputs from invert');
+    }
+
+    print('w_recon value type: ${results[0]!.value.runtimeType}');
+    print('w_recon value sample: ${results[0]!.value.toString().substring(0, 100)}'); // Первые 100 символов
+    print('predicted_feat value type: ${results[1]!.value.runtimeType}');
+    print('predicted_feat value sample: ${results[1]!.value.toString().substring(0, 100)}');
+
+    // Extract raw outputs (expected to be FP16)
+    final wReconRaw = flattenList(results[0]!.value);
+    final predictedFeatRaw = flattenList(results[1]!.value);
+
+    print('Raw w_recon output type: ${wReconRaw.runtimeType}');
+    print('Raw predicted_feat output type: ${predictedFeatRaw.runtimeType}');
+
+    // Convert outputs from FP16 to FP32
+    final wRecon = convertFp16ToFp32(wReconRaw);
+    final predictedFeat = convertFp16ToFp32(predictedFeatRaw);
+
+    // Validate output lengths
+    if (wRecon.length != 1 * 18 * 512) {
+      throw Exception('Unexpected w_recon length: ${wRecon.length}, expected ${1 * 18 * 512}');
+    }
+    if (predictedFeat.length != 1 * 512 * 64 * 64) {
+      throw Exception('Unexpected predicted_feat length: ${predictedFeat.length}, expected ${1 * 512 * 64 * 64}');
+    }
+
+    _logTensorStats('_runInvert', [wRecon, predictedFeat], ['w_recon', 'predicted_feat']);
     print('_runInvert success return!!!!');
-    return results.cast<Float32List>();
+
+    // Release resources
+    inputTensor.release();
+    results.forEach((element) => element?.release());
+    runOptions.release();
+
+    return [wRecon, predictedFeat];
   }
 
-  static Future<Float32List> _runFuser(Float32List input) async {
-    if (_fuserSession == null) throw Exception('Fuser model not loaded');
-    final inputTensor = CustomTensor.createTensorWithDataList(input, [1, 1024, 64, 64]);
-    final results = await _fuserSession!.runAsync(
-      CustomRunOptions(),
-      {'x': inputTensor},
-      outputNames: ['fused_feat'],
-    );
-    if (results.isEmpty || results[0] == null) throw Exception('No output from fuser');
-    _logTensorStats('_runFuser', [results[0]!], ['fused_feat']);
-    print('_runFuser success return!!!!');
-    return results[0]!;
-  }
+  static Future<(Float32List, ResultBatch)> runOnBatch(Float32List inputTensor) async {
+    print('Input shape: ${inputTensor.length}, first 10 values: ${inputTensor.sublist(0, 10)}');
+    // final directory = await getApplicationDocumentsDirectory();
+    // final inputFile = File('${directory.path}/input_tensor.txt');
+    // await inputFile.writeAsString(inputTensor.join('\n'));
+    // print('Saved input tensor to ${inputFile.path}');
 
-  static Future<Float32List> _runE4eEncoder(Float32List input) async {
-    if (_e4eEncoderSession == null) throw Exception('E4eEncoder model not loaded');
-    final inputTensor = CustomTensor.createTensorWithDataList(input, [1, 3, 256, 256]);
-    final results = await _e4eEncoderSession!.runAsync(
-      CustomRunOptions(),
-      {'input.1': inputTensor},
-      outputNames: ['w_e4e'],
-    );
-    if (results.isEmpty || results[0] == null) throw Exception('No output from e4e_encoder');
-    print('_runE4eEncoder success return!!!!');
-    return results[0]!;
-  }
+    final xOut = await _runInterpolate(inputTensor);
+    final x = xOut[0];
+    print('Interpolate output shape: ${x.length}, first 10 values: ${x.sublist(0, 10)}');
 
-  static Future<List<Float32List>> _runDecoderWithoutNewFeature(Float32List input) async {
-    if (_decoderWithoutNewFeatureSession == null) throw Exception('Decoder model not loaded');
-    final inputTensor = CustomTensor.createTensorWithDataList(input, [1, 18, 512]);
-    final results = await _decoderWithoutNewFeatureSession!.runAsync(
-      CustomRunOptions(),
-      {'latent': inputTensor},
-      outputNames: ['image', 'feature'],
-    );
-    if (results.length != 2 || results.any((r) => r == null)) throw Exception('Invalid outputs from decoder');
-    print('_runDecoderWithoutNewFeature success return!!!!');
-    return results.cast<Float32List>();
-  }
+// final interpolateFile = File('${directory.path}/interpolate_output.txt');
+// await interpolateFile.writeAsString(x.join('\n'));
+// print('Saved interpolate output to ${interpolateFile.path}');
 
-  static Future<List<Float32List>> _runDecoderRgbWithoutNewFeature(List<Float32List> inputs) async {
-    if (_decoderRgbWithoutNewFeatureSession == null) throw Exception('Decoder RGB model not loaded');
+    xOut.clear();
 
-    final inputMap = <String, CustomTensor>{};
-    for (int i = 0; i < 9; i++) {
-      if (inputs[i].length != 512) {
-        throw Exception('style_${i + 1} has incorrect length: ${inputs[i].length}, expected 512');
-      }
-      inputMap['style_${i + 1}'] = CustomTensor.createTensorWithDataList(inputs[i], [1, 512]);
-    }
-    for (int i = 0; i < 5; i++) {
-      inputMap['to_rgb_stylespace_${i + 1}'] = CustomTensor.createTensorWithDataList(inputs[9 + i], [1, 512]);
-    }
+    final invertOut = await _runInvert(x);
+    final wRecon = invertOut[0];
+    final predictedFeat = invertOut[1];
+    print('wRecon shape: ${wRecon.length}, first 10 values: ${wRecon.sublist(0, 10)}');
+    print('predictedFeat shape: ${predictedFeat.length}, first 10 values: ${predictedFeat.sublist(0, 10)}');
 
-    final results = await _decoderRgbWithoutNewFeatureSession!.runAsync(
-      CustomRunOptions(),
-      inputMap,
-      outputNames: ['image', 'feature'],
-    );
-    if (results.length != 2 || results.any((r) => r == null)) throw Exception('Invalid outputs from RGB decoder');
-    print('_runDecoderRgbWithoutNewFeature success return!!!!');
-    return results.cast<Float32List>();
-  }
+// final wReconFile = File('${directory.path}/w_recon_output.txt');
+// await wReconFile.writeAsString(wRecon.join('\n'));
+// print('Saved wRecon output to ${wReconFile.path}');
 
-  static Future<List<Float32List>> _runEncoder(Float32List input) async {
-    if (_encoderSession == null) throw Exception('Encoder model not loaded');
-
-    final inputTensor = CustomTensor.createTensorWithDataList(input, [1, 1024, 64, 64]);
-    final results = await _encoderSession!.runAsync(
-      CustomRunOptions(),
-      {'input.1': inputTensor},
-      outputNames: ['edited_feat'],
-    );
-    if (results.isEmpty || results[0] == null) throw Exception('No output from encoder');
-    print('_runEncoder success return!!!!');
-    return [results[0]!];
-  }
-
-  static Future<List<Float32List>> _runDecoderWithNewFeature(List<Float32List> inputs) async {
-    if (_decoderWithNewFeatureSession == null) throw Exception('Decoder with new feature model not loaded');
-
-    final latent = inputs[0];
-    final newFeature = inputs[1];
-
-    print('latent input to decoder: first 10 values: ${latent.sublist(0, 10)}');
-    print('newFeature input to decoder: first 10 values: ${newFeature.sublist(0, 10)}');
-
-    final latentTensor = CustomTensor.createTensorWithDataList(latent, [1, 18, 512]);
-    final newFeatureTensor = CustomTensor.createTensorWithDataList(newFeature, [1, 512, 64, 64]);
-
-    final results = await _decoderWithNewFeatureSession!.runAsync(
-      CustomRunOptions(),
-      {
-        'latent': latentTensor,
-        'onnx::ConvTranspose_1': newFeatureTensor,
-      },
-      outputNames: ['image'],
-    );
-    if (results.isEmpty || results[0] == null) throw Exception('No output from decoder with new feature');
-
-    final output = results[0]!;
-    final minVal = output.reduce((a, b) => a < b ? a : b);
-    final maxVal = output.reduce((a, b) => a > b ? a : b);
-    print('DecoderWithNewFeature output range: min=$minVal, max=$maxVal');
-    if (minVal < -1.0 || maxVal > 1.0) {
-      print('Warning: Output values outside expected [-1, 1] range');
-    }
-
-    print('_runDecoderWithNewFeature success return!!!!');
-    return [results[0]!];
-  }
-
-  static Future<List<Float32List>> _runDecoderRgbWithNewFeature(List<Float32List> inputs) async {
-    if (_decoderRgbWithNewFeatureSession == null) {
-      throw Exception("Decoder RGB with new feature model not loaded");
-    }
-
-    final expectedLengths = [
-      512, 512, 512, 512, 512, 512, 512, 512, 512, 512, 256, 256, 128, 128, 64, 64, 32,
-      512, 512, 512, 512, 512, 256, 128, 64, 32, 512 * 64 * 64
-    ];
-    for (var i = 0; i < inputs.length; i++) {
-      print('inputs[$i] length: ${inputs[i].length}, expected: ${expectedLengths[i]}');
-    }
-
-    final inputMap = <String, CustomTensor>{};
-    for (int i = 0; i < 10; i++) {
-      inputMap['style_${i + 1}'] = CustomTensor.createTensorWithDataList(inputs[i], [1, 512]);
-    }
-    inputMap['style_11'] = CustomTensor.createTensorWithDataList(inputs[10], [1, 256]);
-    inputMap['style_12'] = CustomTensor.createTensorWithDataList(inputs[11], [1, 256]);
-    inputMap['style_13'] = CustomTensor.createTensorWithDataList(inputs[12], [1, 128]);
-    inputMap['style_14'] = CustomTensor.createTensorWithDataList(inputs[13], [1, 128]);
-    inputMap['style_15'] = CustomTensor.createTensorWithDataList(inputs[14], [1, 64]);
-    inputMap['style_16'] = CustomTensor.createTensorWithDataList(inputs[15], [1, 64]);
-    inputMap['style_17'] = CustomTensor.createTensorWithDataList(inputs[16], [1, 32]);
-    for (int i = 0; i < 5; i++) {
-      inputMap['to_rgb_stylespace_${i + 1}'] = CustomTensor.createTensorWithDataList(inputs[17 + i], [1, 512]);
-    }
-    inputMap['to_rgb_stylespace_6'] = CustomTensor.createTensorWithDataList(inputs[22], [1, 256]);
-    inputMap['to_rgb_stylespace_7'] = CustomTensor.createTensorWithDataList(inputs[23], [1, 128]);
-    inputMap['to_rgb_stylespace_8'] = CustomTensor.createTensorWithDataList(inputs[24], [1, 64]);
-    inputMap['to_rgb_stylespace_9'] = CustomTensor.createTensorWithDataList(inputs[25], [1, 32]);
-    inputMap['new_feature'] = CustomTensor.createTensorWithDataList(inputs[26], [1, 512, 64, 64]);
-
-    final results = await _decoderRgbWithNewFeatureSession!.runAsync(
-      CustomRunOptions(),
-      inputMap,
-      outputNames: ['image'],
+    final resultBatch = ResultBatch(
+      latents: wRecon,
+      fusedFeat: Float32List(0),
+      predictedFeat: predictedFeat,
+      wE4e: Float32List(0),
+      input: inputTensor,
     );
 
-    if (results.isEmpty || results[0] == null) {
-      throw Exception('[Isolate] No output from RGB decoder with new feature');
-    }
+    invertOut.clear();
 
-    print('_runDecoderRgbWithNewFeature success');
-    return [results[0]!];
+    return (x, resultBatch);
+
+  }  static Future<Float32List> runEditingOnBatch({
+    required ResultBatch resultBatch,
+    required String editingName,
+    required double editingDegree,
+    required BuildContext context,
+  }) async {
+    print('Running editing with $editingName, degree: $editingDegree');
+    return resultBatch.input;
   }
-
-  // Утилиты
-  static Float32List _elementwiseSubtract(Float32List a, Float32List b) {
-    if (a.length != b.length) throw Exception('Arrays length mismatch');
-    final key = 'concat_${a.length}_${b.length}';
-    final result = _tensorPool.getBuffer(key, a.length);
-    for (int i = 0; i < a.length; i++) {
-      result[i] = a[i] - b[i];
-    }
-    return result;
-  }
-
-  static Float32List _concatAlongAxis1(Float32List a, Float32List b) {
-    final key = 'concat_${a.length}_${b.length}';
-    final result = _tensorPool.getBuffer(key, a.length + b.length);
-    result.setAll(0, a);
-    result.setAll(a.length, b);
-    return result;
-  }
-}
-
-class TensorPool {
-  final Map<String, Float32List> _buffers = {};
-
-  Float32List getBuffer(String key, int size) {
+}class TensorPool {
+  final Map<String, Float32List> _buffers = {};  Float32List getBuffer(String key, int size) {
     if (size < 0) {
       throw ArgumentError('Buffer size cannot be negative: $size');
     }
@@ -550,13 +251,28 @@ class TensorPool {
       print('[TensorPool] Reusing buffer for key=$key, size=$size');
     }
     return _buffers[key]!;
-  }
-
-  void clear() {
+  }  void clear() {
     _buffers.clear();
     print('[TensorPool] Cleared all buffers');
+  }  int get bufferCount => _buffers.length;
+  int get totalSize => _buffers.values.fold(0, (sum, buffer) => sum + buffer.length);
+}
+
+Uint16List flattenList(dynamic input) {
+  final List<int> flattened = [];
+
+  void flatten(dynamic item) {
+    if (item is List) {
+      for (var subItem in item) {
+        flatten(subItem);
+      }
+    } else if (item is int) {
+      flattened.add(item);
+    } else {
+      throw Exception('Unexpected type in list: ${item.runtimeType}');
+    }
   }
 
-  int get bufferCount => _buffers.length;
-  int get totalSize => _buffers.values.fold(0, (sum, buffer) => sum + buffer.length);
+  flatten(input);
+  return Uint16List.fromList(flattened);
 }

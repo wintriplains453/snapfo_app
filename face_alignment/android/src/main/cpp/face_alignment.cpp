@@ -5,8 +5,9 @@
 #include <vector>
 
 cv::Mat align_face(const double* landmarks, int landmark_count, const std::string& filepath) {
-    if (landmark_count != 68) {
-        throw std::runtime_error("Expected 68 landmarks, got " + std::to_string(landmark_count));
+    // Validate landmark count
+    if (landmark_count < 5) {
+        throw std::runtime_error("Expected at least 5 landmarks, got " + std::to_string(landmark_count));
     }
 
     // Load image
@@ -15,29 +16,27 @@ cv::Mat align_face(const double* landmarks, int landmark_count, const std::strin
         throw std::runtime_error("Failed to load image: " + filepath);
     }
 
+    // Resize image to max 512px immediately
+    cv::Mat resized;
+    double scale = std::min(512.0 / img.cols, 512.0 / img.rows);
+    cv::resize(img, resized, cv::Size(), scale, scale, cv::INTER_AREA);
+    img.release(); // Release original image early
+
     // Convert landmarks to GLM vectors
     std::vector<glm::dvec2> lm;
+    lm.reserve(landmark_count);
     for (int i = 0; i < landmark_count; ++i) {
-        lm.emplace_back(landmarks[i * 2], landmarks[i * 2 + 1]);
+        lm.emplace_back(landmarks[i * 2] * scale, landmarks[i * 2 + 1] * scale);
     }
 
-    // Geometric calculations (translated from Python)
-    std::vector<glm::dvec2> lm_chin(lm.begin(), lm.begin() + 17);
-    std::vector<glm::dvec2> lm_eye_left(lm.begin() + 36, lm.begin() + 42);
-    std::vector<glm::dvec2> lm_eye_right(lm.begin() + 42, lm.begin() + 48);
-
-    glm::dvec2 eye_left(0.0, 0.0);
-    for (const auto& pt : lm_eye_left) eye_left += pt;
-    eye_left /= static_cast<double>(lm_eye_left.size());
-
-    glm::dvec2 eye_right(0.0, 0.0);
-    for (const auto& pt : lm_eye_right) eye_right += pt;
-    eye_right /= static_cast<double>(lm_eye_right.size());
+    // Use available landmarks (assuming order: left eye, right eye, nose base, left mouth, right mouth)
+    glm::dvec2 eye_left = lm[0];   // Left eye
+    glm::dvec2 eye_right = lm[1];  // Right eye
+    glm::dvec2 mouth_left = lm[3]; // Left mouth
+    glm::dvec2 mouth_right = lm[4]; // Right mouth
 
     glm::dvec2 eye_avg = (eye_left + eye_right) * 0.5;
     glm::dvec2 eye_to_eye = eye_right - eye_left;
-    glm::dvec2 mouth_left = lm[48];
-    glm::dvec2 mouth_right = lm[54];
     glm::dvec2 mouth_avg = (mouth_left + mouth_right) * 0.5;
     glm::dvec2 eye_to_mouth = mouth_avg - eye_avg;
 
@@ -56,15 +55,6 @@ cv::Mat align_face(const double* landmarks, int landmark_count, const std::strin
     };
     double qsize = glm::length(x) * 2;
 
-    // Shrink
-    cv::Mat resized = img;
-    int shrink = static_cast<int>(std::floor(qsize / 1024 * 0.5));
-    if (shrink > 1) {
-        cv::resize(img, resized, cv::Size(img.cols / shrink, img.rows / shrink), 0, 0, cv::INTER_AREA);
-        for (auto& pt : quad) pt /= shrink;
-        qsize /= shrink;
-    }
-
     // Crop
     float min_x = quad[0].x, max_x = quad[0].x, min_y = quad[0].y, max_y = quad[0].y;
     for (const auto& pt : quad) {
@@ -80,14 +70,28 @@ cv::Mat align_face(const double* landmarks, int landmark_count, const std::strin
             std::min(static_cast<int>(std::ceil(max_x)) + border, resized.cols) - std::max(static_cast<int>(std::floor(min_x)) - border, 0),
             std::min(static_cast<int>(std::ceil(max_y)) + border, resized.rows) - std::max(static_cast<int>(std::floor(min_y)) - border, 0)
     );
-    cv::Mat cropped = resized(crop);
+    cv::Mat cropped;
+    if (crop.width > 0 && crop.height > 0) {
+        cropped = resized(crop);
+    } else {
+        cropped = resized.clone(); // Clone to avoid referencing released memory
+    }
+    resized.release(); // Release resized image early
+
+    // Adjust quad points for crop
     for (auto& pt : quad) pt -= cv::Point2f(crop.x, crop.y);
 
     // Perspective transform
-    std::vector<cv::Point2f> dst_pts = { {0, 0}, {1024, 0}, {1024, 1024}, {0, 1024} };
+    std::vector<cv::Point2f> dst_pts = {
+        {512, 0},   // Adjust for 90-degree clockwise rotation
+        {512, 512},
+        {0, 512},
+        {0, 0}
+    };
     cv::Mat M = cv::getPerspectiveTransform(quad, dst_pts);
     cv::Mat aligned;
-    cv::warpPerspective(cropped, aligned, M, cv::Size(1024, 1024));
+    cv::warpPerspective(cropped, aligned, M, cv::Size(512, 512));
+    cropped.release(); // Release cropped image early
 
     return aligned;
 }
@@ -96,12 +100,12 @@ extern "C" {
 char* align_face_ffi(const double* landmarks, int landmark_count, const char* filepath) {
     try {
         cv::Mat aligned = align_face(landmarks, landmark_count, filepath);
-        std::string output_path = "aligned_image.jpg";
+        std::string output_path = std::string(filepath) + "_aligned.jpg";
         cv::imwrite(output_path, aligned);
+        aligned.release();
         return strdup(output_path.c_str());
     } catch (const std::exception& e) {
-        char* error = strdup(e.what());
-        return error;
+        return strdup(("Error: " + std::string(e.what())).c_str());
     }
 }
 

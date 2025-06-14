@@ -25,11 +25,16 @@ environment:
 # To automatically upgrade your package dependencies to the latest versions
 # consider running `flutter pub upgrade --major-versions`. Alternatively,
 # dependencies can be manually updated by changing the version numbers below to
+#      url: https://github.com/Binozo/onnxruntime_flutter.git
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
     sdk: flutter
+  onnxruntime:
+    path: C:\fork\onnxruntime_flutter
+  face_alignment:
+    path: ./face_alignment
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
@@ -41,6 +46,7 @@ dependencies:
   archive: ^3.3.7
   html: ^0.15.0
   logger: ^2.0.2
+
 
 dev_dependencies:
   flutter_test:
@@ -55,7 +61,7 @@ dev_dependencies:
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
-# The following section is specific to Flutter packages.
+# The following section is specific to  Flutter packages.
 flutter:
 
   # The following line ensures that the Material Icons font is
@@ -67,7 +73,7 @@ flutter:
   assets:
     - assets/bpe_simple_vocab_16e6.txt.gz
     - assets/result.json
-    - assets/models/interpolate.onnx
+    - assets/models/interpolateIR9.onnx
     - assets/models/invert_compressed.onnx
     - assets/models/fuser.onnx
     - assets/models/e4e_encoder_compressed.onnx

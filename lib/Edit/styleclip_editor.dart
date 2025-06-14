@@ -144,7 +144,7 @@ class StyleClipEditor {
       CustomRunOptions(),
       {
         'input.1': tokensTensor,
-        'onnx::Less_1': disentangleTensor,
+        'float16_converter.dart::Less_1': disentangleTensor,
       },
       outputNames: List.generate(26, (i) => 'o${i + 1}'),
     );

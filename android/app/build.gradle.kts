@@ -24,7 +24,7 @@ android {
         applicationId = "com.example.snapfo_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = 24
+        minSdk = 34
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -41,21 +41,31 @@ android {
     packagingOptions {
         resources {
             excludes += setOf(
-                "*.onnx",
+                "*.float16_converter.dart",
                 "META-INF/*.kotlin_module",
                 "META-INF/LICENSE",
                 "META-INF/INDEX.LIST"
             )
         }
         jniLibs {
-            useLegacyPackaging = true
+            pickFirsts.addAll(
+                listOf(
+                    "lib/arm64-v8a/libonnxruntime.so",
+                    "lib/x86_64/libonnxruntime.so"
+                )
+            )
+            excludes.addAll(
+                listOf(
+                    "lib/armeabi-v7a/libonnxruntime.so"
+                )
+            )
         }
     }
 }
 
-dependencies {
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.20.0")
-}
+//dependencies {
+//    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.18.0")
+//}
 
 flutter {
     source = "../.."
