@@ -25,23 +25,32 @@ environment:
 # To automatically upgrade your package dependencies to the latest versions
 # consider running `flutter pub upgrade --major-versions`. Alternatively,
 # dependencies can be manually updated by changing the version numbers below to
+#      url: https://github.com/Binozo/onnxruntime_flutter.git
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
   flutter:
     sdk: flutter
-
+  onnxruntime:
+    path: C:\fork\onnxruntime_flutter
+  face_alignment:
+    path: ./face_alignment
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   image_picker: ^1.1.2
   path_provider: ^2.0.11
   image: ^4.0.17
+  opencv_dart: ^1.4.1
+  vector_math: ^2.1.4
+  archive: ^3.3.7
+  html: ^0.15.0
+  logger: ^2.0.2
+
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
@@ -52,7 +61,7 @@ dev_dependencies:
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
 
-# The following section is specific to Flutter packages.
+# The following section is specific to  Flutter packages.
 flutter:
 
   # The following line ensures that the Material Icons font is
@@ -62,8 +71,22 @@ flutter:
 
   # To add assets to your application, add an assets section, like this:
   assets:
-    - assets/
-    - assets/images/
+    - assets/bpe_simple_vocab_16e6.txt.gz
+    - assets/result.json
+    - assets/models/interpolateIR9.onnx
+    - assets/models/invert_optimized_opt_fp16.onnx
+    - assets/models/fuser.onnx
+    - assets/models/e4e_encoder_opt_fp16.onnx
+    - assets/models/decoder_without_new_feature.onnx
+    - assets/models/decoder_rgb_without_new_feature.onnx
+    - assets/models/encoder.onnx
+    - assets/models/decoder_with_new_feature_opt_fp32.onnx
+    - assets/models/decoder_rgb_with_new_feature.onnx
+    - assets/models/interfacegan_age.onnx
+    - assets/models/decoder_stylespace.onnx
+    - assets/models/clip_text_encoder_compressed.onnx
+    - assets/tokens/blonde.json
+    - assets/models/editings/interfacegan_age.onnx
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

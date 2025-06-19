@@ -1,0 +1,10 @@
+output: 'lib/face_alignment_ffi.dart'
+name: 'FaceAlignment'
+description: 'FFI bindings for face alignment library'
+headers:
+  entry-points:
+    - 'android/src/main/cpp/face_alignment.h'
+  include-directives:
+    - 'android/src/main/cpp/face_alignment.h'
+compiler-opts:
+  - '-I/usr/include/opencv4'

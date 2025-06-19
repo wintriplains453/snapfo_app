@@ -4,12 +4,8 @@
 .pub-cache/
 .pub/
 /build/
-/android/
-/ios/
-/web/
-/linux/
-/windows/
 /macos/
+/assets/
 
 # Файлы, специфичные для IDE
 .idea/
