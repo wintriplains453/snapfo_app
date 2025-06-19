@@ -103,7 +103,7 @@ class Preprocess {
           'Unexpected image format: length=${pixels.length}, expected=$expectedRgbLength (RGB) or $expectedRgbaLength (RGBA)');
     }
 
-    final Float32List tensorJSON = await loadNormalizedFromJson('assets/result.json');
-    return tensorJSON;
+    // final Float32List tensorJSON = await loadNormalizedFromJson('assets/result.json');
+    return tensor;
   }
 }
