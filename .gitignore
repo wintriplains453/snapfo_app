@@ -37,3 +37,6 @@ bin/
 
 #cache
 .dart_tool/
+
+#assets
+/assets/
